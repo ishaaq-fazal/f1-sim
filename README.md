@@ -1,4 +1,5 @@
 # Pit Wall: F1 strategy simulator
+https://f1-sim-2.onrender.com
 
 Watch a race and run one team's strategy: call pit stops, pick tyres and set the pace,
 while the other 19 cars race themselves. The race engine is Python; the browser draws it.
