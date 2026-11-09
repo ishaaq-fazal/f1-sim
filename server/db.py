@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import event, text
+from sqlalchemy import event, inspect, text
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 from .config import ROOT, settings
@@ -33,6 +33,7 @@ class RaceRecord(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id", index=True)
     team: str = Field(max_length=20)
+    track: str = Field(default="harbourline", max_length=20)
     laps: int
     seed: int | None = None
     best_position: int | None = None
@@ -61,6 +62,16 @@ engine = _make_engine(settings.database_url)
 
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
+    _upgrade()
+
+
+def _upgrade() -> None:
+    """Small in-place upgrades for databases created by earlier versions.
+    (Switch to Alembic migrations before making bigger schema changes.)"""
+    cols = {c["name"] for c in inspect(engine).get_columns("racerecord")}
+    if "track" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE racerecord ADD COLUMN track VARCHAR(20) NOT NULL DEFAULT 'harbourline'"))
 
 
 def ping() -> bool:

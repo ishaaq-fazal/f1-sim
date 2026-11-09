@@ -35,7 +35,7 @@ def test_security_headers(client):
 
 def test_setup_lists_teams(client):
     data = client.get("/api/setup").json()
-    assert len(data["teams"]) == 10 and set(data) == {"teams", "laps_default", "speeds"}
+    assert len(data["teams"]) == 10 and set(data) == {"teams", "tracks", "laps_default", "speeds"}
 
 
 def test_source_and_dotfiles_not_served(client):
@@ -130,3 +130,34 @@ def test_ws_oversized_message_closes(client):
         with pytest.raises(WebSocketDisconnect) as exc:
             ws.receive_text()
         assert exc.value.code == 1009
+
+
+def test_setup_lists_tracks_and_team_drivers(client):
+    data = client.get("/api/setup").json()
+    assert {t["id"] for t in data["tracks"]} == {"harbourline", "monteverde", "sandridge", "alderwood"}
+    assert all(len(t["outline"]) > 50 for t in data["tracks"])
+    aurora = next(t for t in data["teams"] if t["id"] == "aurora")
+    assert [d["code"] for d in aurora["drivers"]] == ["MAR", "OKA"]
+
+
+def test_ws_start_on_chosen_track_and_tyres(client):
+    with client.websocket_connect("/ws/race", headers=ORIGIN) as ws:
+        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "seed": 1,
+                                 "track": "monteverde", "tyres": {"MAR": "H", "OKA": "S"}}))
+        init = ws.receive_json()
+        assert init["track"]["id"] == "monteverde"
+        cars = {c["code"]: c for c in ws.receive_json()["cars"]}
+        assert cars["MAR"]["tyre"] == "H" and cars["OKA"]["tyre"] == "S"
+
+
+@pytest.mark.parametrize("extra,detail", [
+    ({"track": "nowhere"}, "Unknown track"),
+    ({"tyres": {"BRA": "S"}}, "Starting tyres can only be set for your own drivers"),
+    ({"tyres": {"MAR": "X"}}, "Invalid message"),
+    ({"tyres": {"MAR": "S", "OKA": "S", "BRA": "S"}}, "Invalid message"),
+    ({"track": "../etc"}, "Invalid message"),
+])
+def test_ws_rejects_bad_track_or_tyres(client, extra, detail):
+    with client.websocket_connect("/ws/race", headers=ORIGIN) as ws:
+        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, **extra}))
+        assert ws.receive_json()["detail"] == detail

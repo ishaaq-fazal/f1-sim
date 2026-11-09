@@ -27,6 +27,7 @@ def catmull_rom_closed(ctrl: np.ndarray, samples: int = 40) -> np.ndarray:
 
 @dataclass
 class Track:
+    id: str
     name: str
     points: np.ndarray          # (N, 2) metres, closed loop, index 0 = start/finish line
     length_m: float
@@ -37,6 +38,9 @@ class Track:
     speed: np.ndarray           # (N,) relative speed profile, m/s at the reference pace
     sector_time: tuple[float, float]   # time fractions of the S1/S2 and S2/S3 lines
     drs_zones: list[tuple[float, float]]  # time-fraction ranges
+    wear_mult: float = 1.0      # tyre wear per lap vs average (abrasive surface > 1)
+    overtake_mult: float = 1.0  # how easy passing is vs average (tight street circuit < 1)
+    blurb: str = ""
 
     def dist_frac(self, time_frac: float) -> float:
         return float(np.interp(time_frac % 1.0, self.cum_time, self.cum_dist))
@@ -53,8 +57,11 @@ class Track:
         pts = self.points[::step]
         idx = np.arange(0, len(self.points), step)
         return {
+            "id": self.id,
             "name": self.name,
             "length_m": round(self.length_m),
+            "wear": self.wear_mult,
+            "overtaking": self.overtake_mult,
             "points": np.round(pts, 1).tolist(),
             "dist": np.round(self.cum_dist[idx], 5).tolist(),
             "sectors": [round(self.dist_frac(s), 4) for s in self.sector_time],
@@ -62,7 +69,8 @@ class Track:
         }
 
 
-def build_track(name, ctrl, length_m, base_lap_s, pit_loss_s, start_near, sector_dist=(0.33, 0.68)):
+def build_track(id, name, ctrl, length_m, base_lap_s, pit_loss_s, start_near, sector_dist=(0.33, 0.68),
+                wear_mult=1.0, overtake_mult=1.0, blurb=""):
     pts = catmull_rom_closed(np.asarray(ctrl, float))
     # Put the start/finish line at the point nearest start_near.
     start = int(np.argmin(np.hypot(*(pts - np.asarray(start_near)).T)))
@@ -112,17 +120,65 @@ def build_track(name, ctrl, length_m, base_lap_s, pit_loss_s, start_near, sector
     drs = sorted((float(cum_time[i]), float(cum_time[j + 1])) for _, i, j in runs[:2])
 
     sector_time = tuple(float(np.interp(s, cum_dist, cum_time)) for s in sector_dist)
-    return Track(name, pts, float(seg.sum()), base_lap_s, pit_loss_s, cum_dist, cum_time, v, sector_time, drs)
+    return Track(id, name, pts, float(seg.sum()), base_lap_s, pit_loss_s, cum_dist, cum_time, v, sector_time, drs,
+                 wear_mult, overtake_mult, blurb)
 
 
-# An original circuit (not a real venue). Clockwise on screen, start on the bottom straight.
+# Original circuits (made up, not real venues). Control points are in arbitrary units and are
+# rescaled to length_m. Each track starts on its main straight.
 HARBOURLINE = [
     (1500, 2000), (900, 2000), (520, 1930), (400, 1700), (400, 800), (600, 450), (1000, 400),
     (1300, 650), (1500, 1000), (1800, 1050), (2100, 800), (2300, 400), (2700, 350), (2900, 600),
     (2850, 1000), (2500, 1250), (2550, 1600), (2800, 1800), (2650, 2000), (2100, 2010),
 ]
 
+# Tight, walled street circuit: lots of 90-degree corners, short straights.
+MONTEVERDE = [
+    (1200, 1800), (500, 1800), (420, 1720), (420, 1300), (500, 1220), (800, 1220), (880, 1140),
+    (880, 800), (800, 720), (500, 720), (420, 640), (420, 300), (500, 220), (1300, 220),
+    (1380, 300), (1380, 700), (1460, 780), (1800, 780), (1880, 860), (1880, 1720), (1800, 1800),
+]
+
+# Fast desert circuit: two very long straights, a hairpin and an abrasive surface.
+SANDRIDGE = [
+    (1600, 1500), (400, 1500), (250, 1420), (230, 1250), (350, 1150), (900, 1100), (1050, 1000),
+    (1000, 850), (600, 700), (450, 550), (500, 400), (700, 330), (2400, 330), (2650, 420),
+    (2720, 600), (2600, 760), (2350, 800), (2250, 900), (2550, 1100), (2700, 1300), (2600, 1450),
+    (2300, 1500),
+]
+
+# Flowing parkland circuit: sweeping curves, medium speed.
+ALDERWOOD = [
+    (1400, 1700), (800, 1700), (450, 1550), (350, 1250), (550, 1000), (500, 750), (300, 550),
+    (450, 300), (850, 280), (1100, 450), (1250, 750), (1550, 800), (1750, 550), (2050, 400),
+    (2350, 550), (2400, 900), (2150, 1150), (2250, 1450), (2050, 1680),
+]
+
+TRACK_SPECS = {
+    "harbourline": dict(name="Harbourline Circuit", ctrl=HARBOURLINE, length_m=5120, base_lap_s=88.0,
+                        pit_loss_s=21.5, start_near=(1650, 2002), wear_mult=1.0, overtake_mult=1.0,
+                        blurb="Balanced harbour-side track with two DRS straights."),
+    "monteverde": dict(name="Monteverde Street Circuit", ctrl=MONTEVERDE, length_m=3420, base_lap_s=74.0,
+                       pit_loss_s=19.0, start_near=(950, 1800), wear_mult=0.75, overtake_mult=0.35,
+                       blurb="Narrow streets and walls: gentle on tyres, very hard to pass. Track position is king."),
+    "sandridge": dict(name="Sandridge Raceway", ctrl=SANDRIDGE, length_m=5610, base_lap_s=91.0,
+                      pit_loss_s=23.0, start_near=(1100, 1500), wear_mult=1.45, overtake_mult=1.5,
+                      blurb="Fast desert circuit with a rough surface: heavy tyre wear, lots of overtaking."),
+    "alderwood": dict(name="Alderwood Park", ctrl=ALDERWOOD, length_m=4310, base_lap_s=79.0,
+                      pit_loss_s=20.5, start_near=(1100, 1700), wear_mult=1.15, overtake_mult=0.8,
+                      blurb="Flowing parkland sweeps that load the tyres; passing takes commitment."),
+}
+DEFAULT_TRACK = "harbourline"
+_cache: dict[str, Track] = {}
+
+
+def get_track(track_id: str = DEFAULT_TRACK) -> Track:
+    """Build (once) and return a circuit by id. Raises KeyError for unknown ids."""
+    if track_id not in _cache:
+        spec = dict(TRACK_SPECS[track_id])
+        _cache[track_id] = build_track(track_id, **spec)
+    return _cache[track_id]
+
 
 def default_track() -> Track:
-    return build_track("Harbourline Circuit", HARBOURLINE, length_m=5120, base_lap_s=88.0,
-                       pit_loss_s=21.5, start_near=(1650, 2002))
+    return get_track(DEFAULT_TRACK)

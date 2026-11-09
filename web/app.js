@@ -71,6 +71,11 @@ async function openStart() {
   if (!S.user) { $("authDialog").showModal(); return; }
   await loadHistory();
   $("startDialog").showModal();
+  redrawOutlines();
+}
+
+function redrawOutlines() {
+  [...$("trackPicker").querySelectorAll("canvas")].forEach((cv, i) => drawOutline(cv, S.setup.tracks[i].outline));
 }
 
 async function loadHistory() {
@@ -79,8 +84,9 @@ async function loadHistory() {
   const races = r.ok ? await r.json() : [];
   $("historyBox").hidden = races.length === 0;
   const teams = new Map((S.setup ? S.setup.teams : []).map((t) => [t.id, t.name]));
+  const tracks = new Map((S.setup ? S.setup.tracks : []).map((t) => [t.id, t.name]));
   list.replaceChildren(...races.slice(0, 8).map((x) => {
-    const li = el("li", null, `${new Date(x.created_at).toLocaleString()} · ${teams.get(x.team) || x.team} · ${x.laps} laps · ${x.summary} · seed ${x.seed}`);
+    const li = el("li", null, `${new Date(x.created_at).toLocaleString()} · ${tracks.get(x.track) || x.track} · ${teams.get(x.team) || x.team} · ${x.laps} laps · ${x.summary} · seed ${x.seed}`);
     const del = el("button", "del", "delete"); del.type = "button";
     del.addEventListener("click", async () => { await api(`/api/races/${x.id}`, { method: "DELETE" }); loadHistory(); });
     li.append(del);
@@ -106,10 +112,13 @@ async function init() {
     const lab = el("label");
     const inp = el("input");
     inp.type = "radio"; inp.name = "team"; inp.value = t.id; inp.checked = i === 0;
+    inp.addEventListener("change", buildTyrePicker);
     const dot = el("i"); dot.style.background = t.color;
     lab.append(inp, dot, el("span", null, t.name));
     picker.append(lab);
   });
+  buildTrackPicker();
+  buildTyrePicker();
   const seg = $("speedSeg");
   S.setup.speeds.forEach((v) => {
     const b = el("button", v === 1 ? "on" : "", `${v}×`);
@@ -145,11 +154,96 @@ function setSpeed(v) {
   for (const b of $("speedSeg").children) b.classList.toggle("on", Number(b.dataset.v) === v);
 }
 
+// ---------------------------------------------------------------- circuit + tyre pickers
+const COMPOUND_INFO = { S: ["Soft", "#ff3b3b"], M: ["Medium", "#ffd23f"], H: ["Hard", "#f2f2f2"] };
+const rating = (x, labels, cuts) => labels[cuts.filter((c) => x >= c).length];
+
+function drawOutline(canvas, pts) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || 130, h = canvas.clientHeight || 70;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const minX = Math.min(...xs), minY = Math.min(...ys);
+  const s = Math.min((w - 10) / (Math.max(...xs) - minX), (h - 10) / (Math.max(...ys) - minY));
+  const ox = (w - (Math.max(...xs) - minX) * s) / 2, oy = (h - (Math.max(...ys) - minY) * s) / 2;
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => { const X = ox + (x - minX) * s, Y = oy + (y - minY) * s; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+  ctx.closePath(); ctx.strokeStyle = "#c9cfdd"; ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
+  const [sx, sy] = pts[0]; ctx.fillStyle = "#e10600";
+  ctx.beginPath(); ctx.arc(ox + (sx - minX) * s, oy + (sy - minY) * s, 3.5, 0, Math.PI * 2); ctx.fill();
+}
+
+function buildTrackPicker() {
+  const picker = $("trackPicker");
+  let blurb = $("trackBlurb");
+  if (!blurb) { blurb = el("p", "track-blurb"); blurb.id = "trackBlurb"; picker.after(blurb); }
+  const showBlurb = () => {
+    const t = S.setup.tracks.find((x) => x.id === selectedTrack());
+    blurb.textContent = t ? t.blurb : "";
+  };
+  picker.replaceChildren(...S.setup.tracks.map((t, i) => {
+    const lab = el("label");
+    const inp = el("input"); inp.type = "radio"; inp.name = "track"; inp.value = t.id; inp.checked = i === 0;
+    inp.addEventListener("change", showBlurb);
+    const cv = el("canvas");
+    const wear = rating(t.wear, ["Low", "Medium", "High", "Very high"], [0.85, 1.1, 1.3]);
+    const pass = rating(t.overtaking, ["Very hard", "Hard", "Medium", "Easy"], [0.5, 0.9, 1.2]);
+    lab.append(inp, cv, el("span", "tname", t.name),
+      el("span", "tmeta", `${(t.length_m / 1000).toFixed(2)} km`),
+      el("span", "tmeta", `Tyre wear: ${wear}`), el("span", "tmeta", `Overtaking: ${pass}`));
+    return lab;
+  }));
+  showBlurb();
+  // draw after layout so the canvases have a size
+  requestAnimationFrame(redrawOutlines);
+}
+
+function selectedTrack() {
+  const r = document.querySelector('input[name="track"]:checked');
+  return r ? r.value : "harbourline";
+}
+
+S.startTyres = {};
+function buildTyrePicker() {
+  const teamId = document.querySelector('input[name="team"]:checked').value;
+  const team = S.setup.teams.find((t) => t.id === teamId);
+  S.startTyres = {};
+  $("tyrePicker").replaceChildren(...team.drivers.map((d) => {
+    const row = el("div", "tyre-row");
+    row.append(el("span", "who", `${d.name} (${d.code})`));
+    const auto = el("button", "boxbtn on", "Auto"); auto.type = "button";
+    auto.title = "Let the strategy model choose";
+    auto.style.color = "#8b93a7"; auto.style.borderColor = "#8b93a7"; auto.style.background = "#8b93a7";
+    const buttons = [auto];
+    for (const k of ["S", "M", "H"]) {
+      const [name, col] = COMPOUND_INFO[k];
+      const b = el("button", "boxbtn", name); b.type = "button"; b.dataset.k = k;
+      b.style.color = col; b.style.borderColor = col;
+      buttons.push(b);
+    }
+    const paint = () => buttons.forEach((b) => {
+      const on = (b.dataset.k || null) === (S.startTyres[d.code] || null);
+      b.classList.toggle("on", on);
+      b.style.background = on ? b.style.borderColor : "transparent";
+    });
+    buttons.forEach((b) => b.addEventListener("click", () => {
+      if (b.dataset.k) S.startTyres[d.code] = b.dataset.k; else delete S.startTyres[d.code];
+      paint();
+    }));
+    paint();
+    row.append(...buttons);
+    return row;
+  }));
+}
+
 function startRace() {
   const team = document.querySelector('input[name="team"]:checked').value;
   const laps = Number($("lapsSelect").value);
   const seedRaw = $("seedInput").value.trim();
-  const msg = { type: "start", team, laps };
+  const msg = { type: "start", team, laps, track: selectedTrack() };
+  if (Object.keys(S.startTyres).length) msg.tyres = { ...S.startTyres };
   if (seedRaw !== "") msg.seed = Number(seedRaw);
   connect(() => {
     S.ws.send(JSON.stringify(msg));

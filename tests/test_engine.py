@@ -87,3 +87,61 @@ def test_strategy_respects_two_compound_rule_and_stint_limits():
         compounds = {p.start_compound} | {c for _, c in p.stops}
         assert len(compounds) >= 2
         assert all(0 < n < laps for n, _ in p.stops)
+
+
+# ------------------------------------------------------------------ circuits and starting tyres
+import pytest  # noqa: E402
+
+from sim.track import TRACK_SPECS, get_track  # noqa: E402
+
+
+@pytest.mark.parametrize("track_id", list(TRACK_SPECS))
+def test_every_circuit_builds_and_races(track_id):
+    t = get_track(track_id)
+    assert t.id == track_id and len(t.points) > 200 and len(t.drs_zones) == 2
+    e = RaceEngine(RaceConfig(laps=8, seed=4, track_id=track_id))
+    run(e)
+    assert e.order()[0].lap == 8
+    clean = [l["time"] for c in e.cars for l in c.laps if l["lap"] > 1 and not l["pit"]]
+    assert t.base_lap_s - 4 < min(clean) < t.base_lap_s + 2
+
+
+def test_unknown_circuit_rejected():
+    with pytest.raises(KeyError):
+        RaceEngine(RaceConfig(track_id="nowhere"))
+
+
+def _total(track_id, what, seeds=range(3)):
+    total = 0
+    for seed in seeds:
+        e = RaceEngine(RaceConfig(laps=30, seed=seed, track_id=track_id, dnf_chance_per_lap=0, vsc_chance_per_lap=0))
+        events = []
+        while not e.finished:
+            e.step(2.0)
+            events += e.snapshot()["events"]
+        total += sum(c.pits for c in e.cars) if what == "stops" else sum(ev["kind"] == "overtake" for ev in events)
+    return total
+
+
+def test_abrasive_circuit_needs_more_stops_than_street_circuit():
+    assert _total("sandridge", "stops") > _total("monteverde", "stops")
+
+
+def test_street_circuit_has_fewer_overtakes():
+    assert _total("monteverde", "overtakes") < _total("sandridge", "overtakes")
+
+
+@pytest.mark.parametrize("start", ["S", "M", "H"])
+def test_player_can_start_on_any_compound(start):
+    e = RaceEngine(RaceConfig(laps=10, seed=1, controlled_team="aurora", start_tyres={"MAR": start, "OKA": start}))
+    mar, oka = e.car("MAR"), e.car("OKA")
+    assert mar.tyre == oka.tyre == start and mar.used == {start}
+    run(e)
+    assert mar.penalty_s == 10.0   # never pitted, so the two-compound rule still bites
+
+
+def test_grid_starts_on_a_mix_of_compounds():
+    seen = set()
+    for seed in range(5):
+        seen |= {c.tyre for c in RaceEngine(RaceConfig(laps=30, seed=seed)).cars}
+    assert len(seen) >= 2

@@ -18,7 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from sqlmodel import Session
 
-from sim import TEAMS, RaceConfig, RaceEngine
+from sim import TEAMS, RaceConfig, RaceEngine, default_grid
+from sim.track import TRACK_SPECS, get_track
 from sim.tyres import COMPOUNDS
 
 from . import repo
@@ -26,7 +27,7 @@ from .auth import ACCESS_COOKIE, user_from_token
 from .config import ROOT, settings
 from .db import Role, User, engine as db_engine, init_db, ping
 from .routes import router
-from .schemas import (ModeCmd, PauseCmd, PitCmd, SetupOut, SpeedCmd, StartCmd, TeamOut,
+from .schemas import (DriverOut, ModeCmd, PauseCmd, PitCmd, SetupOut, SpeedCmd, StartCmd, TeamOut, TrackOut,
                       command_adapter)
 from .security import RateLimit, SameOriginWrites, SecurityHeaders, SlidingWindow, origin_allowed
 
@@ -70,8 +71,18 @@ def healthz():
 
 @app.get("/api/setup", response_model=SetupOut)
 def setup() -> SetupOut:
-    return SetupOut(teams=[TeamOut(id=i, name=n, color=c) for i, n, c, _ in TEAMS],
-                    laps_default=30, speeds=[1, 2, 5, 10, 20, 50])
+    grid = default_grid()
+    teams = [TeamOut(id=i, name=n, color=c,
+                     drivers=[DriverOut(code=d.code, name=d.name) for d in grid if d.team == i])
+             for i, n, c, _ in TEAMS]
+    tracks = []
+    for tid in TRACK_SPECS:
+        t = get_track(tid)
+        step = max(1, len(t.points) // 120)
+        tracks.append(TrackOut(id=tid, name=t.name, length_m=round(t.length_m), base_lap_s=t.base_lap_s,
+                               wear=t.wear_mult, overtaking=t.overtake_mult, blurb=t.blurb,
+                               outline=[[round(x), round(y)] for x, y in t.points[::step]]))
+    return SetupOut(teams=teams, tracks=tracks, laps_default=30, speeds=[1, 2, 5, 10, 20, 50])
 
 
 _ws_per_ip: Counter[str] = Counter()
@@ -152,10 +163,16 @@ class RaceSession:
         if isinstance(cmd, StartCmd):
             if cmd.team not in TEAM_IDS:
                 return await self._error("Unknown team")
+            if cmd.track not in TRACK_SPECS:
+                return await self._error("Unknown track")
+            team_codes = {d.code for d in default_grid() if d.team == cmd.team}
+            if cmd.tyres and not set(cmd.tyres) <= team_codes:
+                return await self._error("Starting tyres can only be set for your own drivers")
             self.team = cmd.team
             # Always record a seed so any race can be replayed exactly.
             self.seed = cmd.seed if cmd.seed is not None else secrets.randbelow(2**31)
-            self.engine = RaceEngine(RaceConfig(laps=cmd.laps, seed=self.seed, controlled_team=cmd.team))
+            self.engine = RaceEngine(RaceConfig(laps=cmd.laps, seed=self.seed, controlled_team=cmd.team,
+                                                track_id=cmd.track, start_tyres=dict(cmd.tyres or {})))
             self.paused, self.pred_cache, self.saved = False, {}, False
             await self._send_init()
         elif self.engine is None:
@@ -210,7 +227,8 @@ class RaceSession:
         with Session(db_engine) as s:
             owner = repo.user_by_id(s, self.user.id)
             if owner is not None:
-                repo.save_race(s, owner, team=self.team, laps=self.engine.cfg.laps, seed=self.seed,
+                repo.save_race(s, owner, team=self.team, track=self.engine.track.id,
+                               laps=self.engine.cfg.laps, seed=self.seed,
                                best_position=min((i for i, c in mine if not c.retired), default=None),
                                winner=order[0].driver.name, summary=summary[:400])
 

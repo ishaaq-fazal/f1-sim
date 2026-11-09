@@ -13,11 +13,18 @@ class _Msg(BaseModel):
     model_config = ConfigDict(extra="forbid", str_max_length=64)
 
 
+TrackId = Annotated[str, Field(pattern=r"^[a-z]{2,20}$")]
+Compound = Literal["S", "M", "H"]
+
+
 class StartCmd(_Msg):
     type: Literal["start"]
     team: TeamId
     laps: int = Field(ge=5, le=70)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
+    track: TrackId = "harbourline"
+    # Starting tyre for each of your two cars, keyed by driver code.
+    tyres: dict[DriverCode, Compound] | None = Field(default=None, max_length=2)
 
 
 class SpeedCmd(_Msg):
@@ -46,14 +53,32 @@ Command = Annotated[Union[StartCmd, SpeedCmd, PauseCmd, PitCmd, ModeCmd], Field(
 command_adapter: TypeAdapter[Command] = TypeAdapter(Command)
 
 
+class DriverOut(BaseModel):
+    code: str
+    name: str
+
+
 class TeamOut(BaseModel):
     id: str
     name: str
     color: str
+    drivers: list[DriverOut]
+
+
+class TrackOut(BaseModel):
+    id: str
+    name: str
+    length_m: int
+    base_lap_s: float
+    wear: float
+    overtaking: float
+    blurb: str
+    outline: list[list[float]]     # ~120 points for a preview
 
 
 class SetupOut(BaseModel):
     teams: list[TeamOut]
+    tracks: list[TrackOut]
     laps_default: int
     speeds: list[int]
 
@@ -102,6 +127,7 @@ class UserOut(BaseModel):
 class RaceOut(BaseModel):
     id: int
     team: str
+    track: str
     laps: int
     seed: int | None
     best_position: int | None

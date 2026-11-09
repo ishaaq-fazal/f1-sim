@@ -224,3 +224,39 @@ def test_cross_site_writes_blocked(alice):
                    headers={"content-type": "application/x-www-form-urlencoded"})
     assert r.status_code == 415
     assert alice.get(f"/api/races/{a_id}").status_code == 200
+
+
+def test_saved_race_records_the_circuit(alice):
+    with Session(engine) as s:
+        user = repo.user_by_email(s, "alice@example.com")
+        s.expunge(user)
+    session = RaceSession(ws=None, user=user)
+    session.team, session.seed = "aurora", 2
+    session.engine = RaceEngine(RaceConfig(laps=5, seed=2, controlled_team="aurora", track_id="sandridge"))
+    while not session.engine.finished:
+        session.engine.step(5.0)
+    session._save_result()
+    assert alice.get("/api/races").json()[0]["track"] == "sandridge"
+
+
+def test_old_databases_get_the_track_column(tmp_path):
+    """A database made before circuits existed is upgraded in place, keeping its races."""
+    from sqlalchemy import create_engine, inspect, text
+
+    import server.db as db
+    old = create_engine(f"sqlite:///{tmp_path}/old.db")
+    with old.begin() as c:
+        c.execute(text('CREATE TABLE "user" (id INTEGER PRIMARY KEY, email VARCHAR, password_hash VARCHAR, '
+                       "role VARCHAR, token_version INTEGER, created_at DATETIME)"))
+        c.execute(text("CREATE TABLE racerecord (id INTEGER PRIMARY KEY, owner_id INTEGER, team VARCHAR, laps INTEGER, "
+                       "seed INTEGER, best_position INTEGER, winner VARCHAR, summary VARCHAR, created_at DATETIME)"))
+        c.execute(text("INSERT INTO racerecord (owner_id, team, laps, summary) VALUES (1, 'aurora', 10, 'x')"))
+    real = db.engine
+    try:
+        db.engine = old
+        db._upgrade()
+    finally:
+        db.engine = real
+    assert "track" in {col["name"] for col in inspect(old).get_columns("racerecord")}
+    with old.connect() as c:
+        assert c.execute(text("SELECT track FROM racerecord")).scalar() == "harbourline"

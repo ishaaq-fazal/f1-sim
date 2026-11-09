@@ -26,15 +26,15 @@ class Plan:
         return " ".join(parts)
 
 
-def _stint_costs(code: str, wear0: float, max_laps: int) -> np.ndarray:
+def _stint_costs(code: str, wear0: float, max_laps: int, wear_mult: float = 1.0) -> np.ndarray:
     """cum[n] = total delta over the first n laps of a stint starting at wear0."""
     c = COMPOUNDS[code]
-    per_lap = np.array([c.delta(wear0 + i) for i in range(max_laps)])
+    per_lap = np.array([c.delta(wear0 + i * wear_mult) for i in range(max_laps)])
     return np.concatenate([[0.0], np.cumsum(per_lap)])
 
 
-def _max_stint(code: str, wear0: float = 0.0) -> int:
-    return max(1, int(COMPOUNDS[code].cliff_lap + MAX_OVER_CLIFF - wear0))
+def _max_stint(code: str, wear0: float = 0.0, wear_mult: float = 1.0) -> int:
+    return max(1, int((COMPOUNDS[code].cliff_lap + MAX_OVER_CLIFF - wear0) / wear_mult))
 
 
 def best_plan(
@@ -44,22 +44,27 @@ def best_plan(
     wear: float = 0.0,
     used: set[str] | None = None,
     max_stops: int = 2,
+    wear_mult: float = 1.0,
+    starts: list[str] | None = None,
 ) -> Plan:
     """Brute-force the best 0/1/2-stop plan for the remaining laps.
 
     current=None means pre-race: the starting compound is also chosen.
     The plan must use at least two different dry compounds over the whole race.
+    wear_mult scales tyre wear per lap for the circuit. starts limits the pre-race
+    starting compound choices.
     """
     used = set(used or ())
     codes = list(COMPOUNDS)
-    fresh = {c: _stint_costs(c, 0.0, laps_left + 1) for c in codes}
-    starts = [current] if current else codes
+    m = wear_mult
+    fresh = {c: _stint_costs(c, 0.0, laps_left + 1, m) for c in codes}
+    starts = [current] if current else (starts or codes)
     best = Plan(None, [], float("inf"))
 
     for first in starts:
         w0 = wear if current else 0.0
-        first_cost = _stint_costs(first, w0, laps_left + 1) if current else fresh[first]
-        first_max = _max_stint(first, w0)
+        first_cost = _stint_costs(first, w0, laps_left + 1, m) if current else fresh[first]
+        first_max = _max_stint(first, w0, m)
         seen = used | {first}
 
         # 0 stops
@@ -72,7 +77,7 @@ def best_plan(
             for seq in product(codes, repeat=n_stops):
                 if len(seen | set(seq)) < 2:
                     continue
-                cost = _best_split(laps_left, first_cost, first_max, seq, fresh)
+                cost = _best_split(laps_left, first_cost, first_max, seq, fresh, m)
                 if cost is None:
                     continue
                 total, split = cost
@@ -88,13 +93,13 @@ def best_plan(
     return best
 
 
-def _best_split(laps_left, first_cost, first_max, seq, fresh):
+def _best_split(laps_left, first_cost, first_max, seq, fresh, m=1.0):
     """Return (cost, [first stint length, next stint lengths except last]) or None."""
     if len(seq) == 1:
         best = None
         for k in range(1, laps_left):
             rest = laps_left - k
-            if k > first_max or rest > _max_stint(seq[0]):
+            if k > first_max or rest > _max_stint(seq[0], 0.0, m):
                 continue
             cost = first_cost[k] + fresh[seq[0]][rest]
             if best is None or cost < best[0]:
@@ -103,9 +108,9 @@ def _best_split(laps_left, first_cost, first_max, seq, fresh):
     best = None
     a, b = seq
     for k1 in range(1, min(first_max, laps_left - 2) + 1):
-        for k2 in range(1, min(_max_stint(a), laps_left - k1 - 1) + 1):
+        for k2 in range(1, min(_max_stint(a, 0.0, m), laps_left - k1 - 1) + 1):
             rest = laps_left - k1 - k2
-            if rest > _max_stint(b):
+            if rest > _max_stint(b, 0.0, m):
                 continue
             cost = first_cost[k1] + fresh[a][k2] + fresh[b][rest]
             if best is None or cost < best[0]:

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from .grid import Driver, default_grid
 from .strategy import Plan, best_plan
-from .track import Track, default_track
+from .track import Track, get_track
 from .tyres import COMPOUNDS, PACE_MODES
 
 FUEL_S_PER_KG = 0.032
@@ -30,6 +30,8 @@ class RaceConfig:
     laps: int = 30
     seed: int | None = None
     controlled_team: str | None = None   # team whose pit calls the player makes
+    track_id: str = "harbourline"
+    start_tyres: dict[str, str] | None = None   # player's starting compound per driver code
     vsc_chance_per_lap: float = 0.025
     dnf_chance_per_lap: float = 0.0008
     mistake_chance_per_lap: float = 0.012
@@ -85,7 +87,7 @@ class RaceEngine:
     def __init__(self, config: RaceConfig | None = None, track: Track | None = None,
                  drivers: list[Driver] | None = None):
         self.cfg = config or RaceConfig()
-        self.track = track or default_track()
+        self.track = track or get_track(self.cfg.track_id)
         self.rng = random.Random(self.cfg.seed)
         self.t = 0.0
         self.chequered = False
@@ -102,18 +104,27 @@ class RaceEngine:
     def _setup(self, drivers: list[Driver]) -> None:
         # Qualifying: pace plus noise sets the grid.
         quali = sorted(drivers, key=lambda d: d.pace_s + self.rng.gauss(0, 0.18))
+        # Best plan for each possible starting compound on this circuit.
+        by_start = {c: best_plan(self.cfg.laps, self.track.pit_loss_s, wear_mult=self.track.wear_mult,
+                                 starts=[c]) for c in COMPOUNDS}
+        best_cost = min(p.cost_s for p in by_start.values())
         for slot, d in enumerate(quali):
             car = Car(driver=d, grid=slot + 1)
             car.controlled = d.team == self.cfg.controlled_team
-            car.plan = best_plan(self.cfg.laps, self.track.pit_loss_s)
+            chosen = (self.cfg.start_tyres or {}).get(d.code) if car.controlled else None
+            if chosen is None:
+                # Teams pick among starting tyres whose plans are close to the best, so the grid
+                # starts on a mix of compounds rather than everyone on the same one.
+                options = [c for c, p in by_start.items() if p.cost_s <= best_cost + 8.0]
+                weights = [math.exp(-(by_start[c].cost_s - best_cost) / 4.0) for c in options]
+                chosen = self.rng.choices(options, weights)[0]
+            base = by_start[chosen]
+            car.plan = Plan(chosen, list(base.stops), base.cost_s)
             if not car.controlled:
-                # AI teams vary a little from the optimum so races differ.
+                # AI teams vary their stop laps a little so races differ.
                 car.plan.stops = [(max(2, min(self.cfg.laps - 2, n + self.rng.randint(-2, 2))), c)
                                   for n, c in car.plan.stops]
-                if self.rng.random() < 0.25:
-                    alt = self.rng.choice([c for c in COMPOUNDS if c != car.plan.start_compound])
-                    car.plan = _with_start(car.plan, alt, self.cfg.laps, self.track.pit_loss_s)
-            car.tyre = car.plan.start_compound or "M"
+            car.tyre = chosen
             car.used = {car.tyre}
             car.fuel = self.cfg.laps * FUEL_PER_LAP_KG + 3.0
             car.frac = -(slot * GRID_SLOT_M + 6.0) / self.track.length_m
@@ -209,6 +220,7 @@ class RaceEngine:
             drs = (not self.vsc and car.lap >= 2 and self.track.in_drs(car.frac))
             rate = 0.0 if self.vsc else max(0.0, 0.01 + 0.22 * delta + (0.35 if drs else 0.0))
             rate *= 0.6 + 0.8 * car.driver.racecraft - 0.4 * ahead.driver.racecraft
+            rate *= self.track.overtake_mult
             if ahead.dist - car.dist > 0.45:  # lapping a backmarker: blue flags
                 rate = 5.0
             if rate > 0 and self.rng.random() < 1 - math.exp(-rate * dt):
@@ -244,7 +256,7 @@ class RaceEngine:
         car.sector_idx = 0
         car.tyre_age += 1
         _, wear_mult = PACE_MODES[car.mode]
-        car.wear += wear_mult * (0.4 if self.vsc else 1.0)
+        car.wear += wear_mult * self.track.wear_mult * (0.4 if self.vsc else 1.0)
         car.fuel = max(0.0, car.fuel - FUEL_PER_LAP_KG)
         record = {"code": car.code, "lap": car.lap, "time": round(lap_time, 3), "tyre": car.tyre,
                   "age": car.tyre_age, "pit": car.pit_this_lap, "sectors": [round(s or 0, 3) for s in car.sectors]}
@@ -304,7 +316,8 @@ class RaceEngine:
                     compound = c
             worn = car.wear > COMPOUNDS[car.tyre].cliff_lap + 2 and laps_left > 3
             if compound is None and (worn or (len(car.used) < 2 and laps_left == 2)):
-                plan = best_plan(laps_left, self.track.pit_loss_s, car.tyre, car.wear, car.used)
+                plan = best_plan(laps_left, self.track.pit_loss_s, car.tyre, car.wear, car.used,
+                             wear_mult=self.track.wear_mult)
                 compound = plan.stops[0][1] if plan.stops else ("H" if car.tyre != "H" else "M")
         if compound is None or laps_left < 1:
             return
@@ -322,7 +335,8 @@ class RaceEngine:
         car.passing = None
         if not car.controlled and car.plan:
             # Re-plan the rest of the race from here.
-            car.plan = best_plan(laps_left, self.track.pit_loss_s, compound, 0.0, car.used)
+            car.plan = best_plan(laps_left, self.track.pit_loss_s, compound, 0.0, car.used,
+                                  wear_mult=self.track.wear_mult)
             car.plan_base = car.lap
         self._event("pit", f"{car.code} pits: {COMPOUNDS[old].name} -> {COMPOUNDS[compound].name}"
                     + (" (cheap stop under VSC)" if self.vsc else ""), car.code)
@@ -389,15 +403,10 @@ class RaceEngine:
         if not car or not car.running:
             return None
         laps_left = self.cfg.laps - car.lap
-        plan = best_plan(laps_left, self.track.pit_loss_s, car.tyre, car.wear, car.used)
+        plan = best_plan(laps_left, self.track.pit_loss_s, car.tyre, car.wear, car.used,
+                             wear_mult=self.track.wear_mult)
         return {"code": code, "stops": [{"in_laps": n, "lap": car.lap + n, "compound": c} for n, c in plan.stops],
                 "cost_s": round(plan.cost_s, 1)}
-
-
-def _with_start(plan: Plan, start: str, laps: int, pit_loss: float) -> Plan:
-    p = best_plan(laps, pit_loss, start, 0.0, set())
-    p.start_compound = start
-    return p
 
 
 def fmt_time(s: float) -> str:
