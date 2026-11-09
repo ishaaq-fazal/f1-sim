@@ -1,5 +1,5 @@
 # Pit Wall: F1 strategy simulator
-https://f1-sim-2.onrender.com
+
 
 **Live: https://f1-sim-2.onrender.com**
 
