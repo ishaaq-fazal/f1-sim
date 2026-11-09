@@ -172,7 +172,8 @@ class RaceSession:
             # Always record a seed so any race can be replayed exactly.
             self.seed = cmd.seed if cmd.seed is not None else secrets.randbelow(2**31)
             self.engine = RaceEngine(RaceConfig(laps=cmd.laps, seed=self.seed, controlled_team=cmd.team,
-                                                track_id=cmd.track, start_tyres=dict(cmd.tyres or {})))
+                                                track_id=cmd.track, start_tyres=dict(cmd.tyres or {}),
+                                                weather=cmd.weather))
             self.paused, self.pred_cache, self.saved = False, {}, False
             await self._send_init()
         elif self.engine is None:
@@ -211,7 +212,8 @@ class RaceSession:
         await self.ws.send_text(json.dumps(snap))
 
     def _prediction(self, car) -> dict | None:
-        key = (car.lap, car.tyre, round(car.wear, 1), tuple(sorted(car.used)), car.running)
+        key = (car.lap, car.tyre, round(car.wear, 1), tuple(sorted(car.used)), car.running,
+               round(self.engine.weather.wetness, 2))
         cached = self.pred_cache.get(car.code)
         if cached and cached[0] == key:
             return cached[1]

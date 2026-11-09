@@ -160,3 +160,9 @@ input[type=email], input[type=password] { background: var(--panel-2); border: 1p
 .start-tyres .tyre-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .start-tyres .who { min-width: 150px; font-size: 13px; }
 .start-tyres .boxbtn.on { color: #000 !important; }
+
+.weather { font-family: var(--mono); font-size: 12px; padding: 3px 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); white-space: nowrap; }
+.weather.rain { border-color: #2f8cff; color: #bcd8ff; }
+.weather .fc { color: var(--muted); margin-left: 6px; }
+.log .k-weather { color: #7fb8ff; }
+.predict .call { color: #7fb8ff; }

@@ -155,7 +155,8 @@ function setSpeed(v) {
 }
 
 // ---------------------------------------------------------------- circuit + tyre pickers
-const COMPOUND_INFO = { S: ["Soft", "#ff3b3b"], M: ["Medium", "#ffd23f"], H: ["Hard", "#f2f2f2"] };
+const COMPOUND_INFO = { S: ["Soft", "#ff3b3b"], M: ["Medium", "#ffd23f"], H: ["Hard", "#f2f2f2"],
+  I: ["Inter", "#3fbf4f"], W: ["Wet", "#2f8cff"] };
 const rating = (x, labels, cuts) => labels[cuts.filter((c) => x >= c).length];
 
 function drawOutline(canvas, pts) {
@@ -217,7 +218,7 @@ function buildTyrePicker() {
     auto.title = "Let the strategy model choose";
     auto.style.color = "#8b93a7"; auto.style.borderColor = "#8b93a7"; auto.style.background = "#8b93a7";
     const buttons = [auto];
-    for (const k of ["S", "M", "H"]) {
+    for (const k of ["S", "M", "H", "I", "W"]) {
       const [name, col] = COMPOUND_INFO[k];
       const b = el("button", "boxbtn", name); b.type = "button"; b.dataset.k = k;
       b.style.color = col; b.style.borderColor = col;
@@ -242,7 +243,7 @@ function startRace() {
   const team = document.querySelector('input[name="team"]:checked').value;
   const laps = Number($("lapsSelect").value);
   const seedRaw = $("seedInput").value.trim();
-  const msg = { type: "start", team, laps, track: selectedTrack() };
+  const msg = { type: "start", team, laps, track: selectedTrack(), weather: $("weatherSelect").value };
   if (Object.keys(S.startTyres).length) msg.tyres = { ...S.startTyres };
   if (seedRaw !== "") msg.seed = Number(seedRaw);
   connect(() => {
@@ -312,11 +313,25 @@ function onState(st) {
   if (st.finished && !S.resultShown) { S.resultShown = true; showResults(st); }
 }
 
+function renderWeather(wx) {
+  const box = $("weatherBox");
+  if (!wx) { box.hidden = true; return; }
+  box.hidden = false;
+  const raining = wx.rain > 0.03;
+  box.className = "weather" + (raining || wx.wetness > 0.1 ? " rain" : "");
+  const sky = raining ? `${wx.rain_label[0].toUpperCase()}${wx.rain_label.slice(1)} rain` : "No rain";
+  const fc = wx.forecast.map((f) => `${f.in_min}m ${f.chance}%`).join(" · ");
+  box.replaceChildren(`${sky} · track ${Math.round(wx.wetness * 100)}% wet`, el("span", "fc", `rain chance ${fc}`));
+  S.weather = wx;
+}
+
 function renderHeader(st) {
+  renderWeather(st.weather);
   $("lapCounter").textContent = `LAP ${st.lap}/${st.total_laps}`;
   $("raceClock").textContent = fmtClock(st.t);
   const f = $("flag");
   if (st.chequered) { f.className = "flag chequered"; f.textContent = "FINISH"; }
+  else if (st.vsc && st.weather && st.weather.rain > 0.03) { f.className = "flag vsc"; f.textContent = "VSC · RAIN"; }
   else if (st.vsc) { f.className = "flag vsc"; f.textContent = "VSC"; }
   else { f.className = "flag green"; f.textContent = "GREEN"; }
   $("fastestLap").textContent = st.fastest ? `Fastest: ${st.fastest.code} ${fmtLap(st.fastest.time)} (lap ${st.fastest.lap})` : "";
@@ -384,8 +399,8 @@ function buildCard(c) {
   const pred = el("p", "predict");
   const act = el("div", "actions");
   act.append(el("span", "label", "Box this lap for"));
-  for (const k of ["S", "M", "H"]) {
-    const b = el("button", "boxbtn", S.compounds[k].name);
+  for (const k of ["S", "M", "H", "I", "W"]) {
+    const b = el("button", "boxbtn", k === "I" ? "Inter" : S.compounds[k].name);
     b.type = "button"; b.dataset.box = k; b.style.color = S.compounds[k].color; b.style.borderColor = S.compounds[k].color;
     b.addEventListener("click", () => {
       const cur = S.state.cars.find((x) => x.code === c.code);
@@ -437,7 +452,13 @@ function updateCard(c, st) {
   if (!S.canCommand) pred.append("Viewer account: you can watch, but only team principals can give orders. ");
   if (done) pred.append(c.finished ? "Finished." : "Retired.");
   else if (c.in_pit) pred.append(`In the pit lane: ${c.pit_timer.toFixed(1)}s`);
-  else if (p) {
+  else if (p && p.weather_call) {
+    pred.append("Weather call: ");
+    pred.append(el("b", "call", `box for ${S.compounds[p.weather_call].name}s, about ${p.gain_s}s a lap faster in these conditions`));
+  } else if (p && p.stay_wet) {
+    pred.append("Model's best plan: ");
+    pred.append(el("b", null, `stay on ${S.compounds[c.tyre].name}s while the track is wet`));
+  } else if (p) {
     pred.append("Model's best plan: ");
     if (!p.stops.length) pred.append(el("b", null, "no more stops, run to the flag"));
     else p.stops.forEach((s, i) => {
@@ -612,9 +633,27 @@ function drawLoop() {
       S.trackCache = off;
     }
     ctx.drawImage(S.trackCache, 0, 0, w, h);
+    if (S.weather) drawRain(ctx, w, h, S.weather);
     if (S.state) drawCars(ctx, v);
   }
   requestAnimationFrame(drawLoop);
+}
+
+// Wet track tint plus falling rain streaks, heavier with the rain intensity.
+const drops = Array.from({ length: 220 }, () => [Math.random(), Math.random(), 0.6 + Math.random() * 0.8]);
+function drawRain(ctx, w, h, wx) {
+  if (wx.wetness > 0.02) { ctx.fillStyle = `rgba(60,120,220,${0.10 * wx.wetness})`; ctx.fillRect(0, 0, w, h); }
+  if (wx.rain < 0.03) return;
+  const n = Math.round(drops.length * Math.min(1, wx.rain));
+  const t = performance.now() / 1000;
+  ctx.strokeStyle = "rgba(170,200,255,0.35)"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const [dx, dy, sp] = drops[i];
+    const x = ((dx * w + t * 40 * sp) % w + w) % w, y = ((dy * h + t * 420 * sp) % h + h) % h;
+    ctx.moveTo(x, y); ctx.lineTo(x - 3, y + 10);
+  }
+  ctx.stroke();
 }
 
 function drawCars(ctx, v) {

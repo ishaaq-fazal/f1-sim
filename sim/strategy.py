@@ -9,7 +9,7 @@ from itertools import product
 
 import numpy as np
 
-from .tyres import COMPOUNDS
+from .tyres import COMPOUNDS, DRY
 
 MAX_OVER_CLIFF = 4  # never plan a stint more than this many laps past the cliff
 
@@ -46,16 +46,18 @@ def best_plan(
     max_stops: int = 2,
     wear_mult: float = 1.0,
     starts: list[str] | None = None,
+    require_two: bool = True,
 ) -> Plan:
     """Brute-force the best 0/1/2-stop plan for the remaining laps.
 
     current=None means pre-race: the starting compound is also chosen.
-    The plan must use at least two different dry compounds over the whole race.
+    The plan must use at least two different dry compounds over the whole race, unless
+    require_two is False (e.g. wet tyres were used, which waives the rule).
     wear_mult scales tyre wear per lap for the circuit. starts limits the pre-race
     starting compound choices.
     """
     used = set(used or ())
-    codes = list(COMPOUNDS)
+    codes = list(DRY)
     m = wear_mult
     fresh = {c: _stint_costs(c, 0.0, laps_left + 1, m) for c in codes}
     starts = [current] if current else (starts or codes)
@@ -68,14 +70,14 @@ def best_plan(
         seen = used | {first}
 
         # 0 stops
-        if laps_left <= first_max and len(seen) >= 2:
+        if laps_left <= first_max and (not require_two or len(seen & set(DRY)) >= 2):
             cost = first_cost[laps_left]
             if cost < best.cost_s:
                 best = Plan(None if current else first, [], cost)
 
         for n_stops in range(1, max_stops + 1):
             for seq in product(codes, repeat=n_stops):
-                if len(seen | set(seq)) < 2:
+                if require_two and len((seen | set(seq)) & set(DRY)) < 2:
                     continue
                 cost = _best_split(laps_left, first_cost, first_max, seq, fresh, m)
                 if cost is None:

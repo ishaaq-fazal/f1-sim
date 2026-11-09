@@ -14,7 +14,7 @@ class _Msg(BaseModel):
 
 
 TrackId = Annotated[str, Field(pattern=r"^[a-z]{2,20}$")]
-Compound = Literal["S", "M", "H"]
+Compound = Literal["S", "M", "H", "I", "W"]
 
 
 class StartCmd(_Msg):
@@ -23,6 +23,7 @@ class StartCmd(_Msg):
     laps: int = Field(ge=5, le=70)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     track: TrackId = "harbourline"
+    weather: Literal["dry", "wet", "changeable"] = "dry"
     # Starting tyre for each of your two cars, keyed by driver code.
     tyres: dict[DriverCode, Compound] | None = Field(default=None, max_length=2)
 
@@ -40,7 +41,7 @@ class PauseCmd(_Msg):
 class PitCmd(_Msg):
     type: Literal["pit"]
     driver: DriverCode
-    compound: Literal["S", "M", "H"] | None
+    compound: Literal["S", "M", "H", "I", "W"] | None
 
 
 class ModeCmd(_Msg):

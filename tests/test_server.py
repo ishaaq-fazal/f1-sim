@@ -161,3 +161,28 @@ def test_ws_rejects_bad_track_or_tyres(client, extra, detail):
     with client.websocket_connect("/ws/race", headers=ORIGIN) as ws:
         ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, **extra}))
         assert ws.receive_json()["detail"] == detail
+
+
+def test_ws_wet_race_with_inters(client):
+    with client.websocket_connect("/ws/race", headers=ORIGIN) as ws:
+        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "seed": 3,
+                                 "weather": "wet", "tyres": {"MAR": "I", "OKA": "W"}}))
+        init = ws.receive_json()
+        assert {"I", "W"} <= set(init["compounds"])
+        st = ws.receive_json()
+        assert st["weather"]["mode"] == "wet" and st["weather"]["wetness"] > 0.5
+        assert len(st["weather"]["forecast"]) == 4
+        cars = {c["code"]: c for c in st["cars"]}
+        assert cars["MAR"]["tyre"] == "I" and cars["OKA"]["tyre"] == "W"
+        ws.send_text(json.dumps({"type": "pit", "driver": "MAR", "compound": "W"}))
+        for _ in range(10):
+            st = next_of(ws, "state")
+            if {c["code"]: c for c in st["cars"]}["MAR"]["pit_request"] == "W":
+                break
+        assert {c["code"]: c for c in st["cars"]}["MAR"]["pit_request"] == "W"
+
+
+def test_ws_rejects_unknown_weather(client):
+    with client.websocket_connect("/ws/race", headers=ORIGIN) as ws:
+        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "weather": "snow"}))
+        assert ws.receive_json()["detail"] == "Invalid message"

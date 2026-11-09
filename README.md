@@ -1,19 +1,44 @@
 # Pit Wall: F1 strategy simulator
 https://f1-sim-2.onrender.com
 
-Watch a race and run one team's strategy: call pit stops, pick tyres and set the pace,
-while the other 19 cars race themselves. The race engine is Python; the browser draws it.
+**Live: https://f1-sim-2.onrender.com**
+
+Watch a race and run one team's strategy: pick the circuit and your starting tyres, then call
+pit stops and set the pace while the other 18 cars race themselves on their own strategies.
+The race engine is Python; the browser draws it.
+
+![Race screen: track map, timing tower and your pit wall](screenshot.png)
+
+## Features
+
+* **4 original circuits**, each with its own layout, lap length, tyre wear and overtaking difficulty:
+  Harbourline (balanced), Monteverde Street Circuit (very hard to pass, easy on tyres),
+  Sandridge Raceway (very high wear, easy to pass), Alderwood Park (high wear, hard to pass).
+* **Starting tyres**: start each of your cars on Soft, Medium or Hard, or let the model choose.
+  The two-compound rule still applies (+10 s if you only use one).
+* **Weather**: dry, wet or changeable races. Rain comes and goes, the track soaks and dries out
+  over time, and a forecast shows the chance of rain. Intermediates and Wets are quick in the wet
+  but overheat on a drying track; AI teams switch tyres when the gain pays for the stop. Using a
+  wet tyre waives the two-compound rule.
+* **Pit wall**: box this lap for any compound, push / normal / conserve pace, and a
+  "model's best plan" prediction that updates as the tyres wear.
+* **Live timing**: track map with DRS zones and sectors, timing tower (gap/interval, last and
+  best laps, tyre and age, stops), lap time chart, race control feed (overtakes, pit stops,
+  fastest laps, Virtual Safety Car, retirements).
+* **Accounts**: sign up and log in, with your race history saved to your account.
 
 ```
 sim/        pure-Python race engine (no web code)
-  track.py      circuit geometry, speed profile, sectors, DRS zones
+  track.py      the 4 circuits: geometry, speed profile, sectors, DRS zones, tyre wear, overtaking
   tyres.py      compounds: pace offset, degradation, wear cliff; pace modes
   strategy.py   pit strategy optimiser (used by AI teams and for "model's best plan")
-  engine.py     the race: lap times, fuel, traffic, overtakes, pit stops, VSC, DNFs
+  engine.py     the race: lap times, fuel, traffic, overtakes, pit stops, VSC, DNFs, starting tyres
   grid.py       default (made-up) teams and drivers
-server/     FastAPI app: serves web/, streams the race over a WebSocket
+server/     FastAPI app: serves web/, streams the race over a WebSocket, accounts + database
+  repo.py       the only code that touches the database (every query scoped to its owner)
+  cli.py        admin commands: list-users, reset-password
 web/        HTML/CSS/JS front end (canvas track map, timing tower, Chart.js lap chart)
-tests/      pytest: engine behaviour + server security checks
+tests/      pytest: engine, circuits, accounts/authorisation and security checks
 ```
 
 ## Run it
@@ -24,12 +49,15 @@ pip install -r requirements-dev.txt
 cp .env.example .env
 uvicorn server.main:app --reload
 ```
-Open http://localhost:8000, pick a team, press **Lights out**. Use 10x-50x to speed things up.
+Open http://localhost:8000, create an account, pick a circuit, team and starting tyres, and
+press **Lights out**. Use 10x-50x to speed things up.
+
+Forgot a password? `python -m server.cli reset-password you@example.com`
 
 ## Checks
 
 ```bash
-pytest -q                          # engine + security tests
+pytest -q                          # 90 tests: engine, circuits, weather, accounts, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 
@@ -41,7 +69,9 @@ plus a standing-start loss on lap 1, rare mistakes, and x1.4 under the VSC.
 Cars move round the lap along a speed profile (slow in corners, fast on straights).
 A car that catches the one ahead is held at ~0.2 s unless it wins an overtake roll, which
 gets likelier with a bigger pace gap, DRS, and better racecraft.
-A pit stop costs ~21.5 s (about half under the VSC). Using only one compound earns +10 s.
+A pit stop costs 19-23 s depending on the circuit (about half under the VSC). Using only one
+compound earns +10 s. Each circuit scales tyre wear per lap and the chance of overtaking, and the
+AI teams' strategies (and the "best plan" prediction) are optimised for that circuit.
 
 ## Security already in place
 
@@ -81,8 +111,28 @@ Known limits: tables are created at startup (add Alembic migrations before chang
 schema with real users), and live races and rate limits live in one server's memory, so run
 a single instance until those move to a shared store such as Redis.
 
+## Accounts and data protection
+
+Sign up with an email and a password (10+ characters). Roles:
+
+| Role | Can |
+|---|---|
+| viewer | watch races, but not give orders |
+| principal | run races and command their own team (default for new accounts) |
+| admin | everything, plus change other users' roles (the first account created) |
+
+Finished races are saved to your history (circuit, team, result, seed to replay it); only you
+can see or delete them.
+
+Argon2id password hashes, short-lived JWT access tokens plus refresh tokens in HttpOnly,
+SameSite=Strict cookies, revoked on logout or role change. All database access goes through `server/repo.py`, which scopes every race query to its
+owner and uses parameterised SQLModel queries only. Another user's race returns the same
+404 as a missing one. Tests in `tests/test_auth.py` try SQL injection, forged and expired
+tokens, cross-user reads and deletes, and role escalation.
 
 ## Next
 
-1. Real data: load historical sessions with FastF1, fit tyre degradation and fuel effect per
-   circuit with scikit-learn, and use them in place of the hand-tuned numbers in `tyres.py`. 4 circuits ro pick from and you can pick tires before race starts.
+1. Real data: load historical sessions with FastF1 and fit tyre degradation and fuel effect per
+   circuit with scikit-learn, replacing the hand-tuned numbers in `tyres.py` and `track.py`.
+2. Alembic migrations before the next database schema change.
+3. Privacy page and a "forgot password" email flow before sharing the site widely.

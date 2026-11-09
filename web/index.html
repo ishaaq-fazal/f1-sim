@@ -13,6 +13,7 @@
       <span class="flag" id="flag">READY</span>
       <span class="lap" id="lapCounter">LAP –/–</span>
       <span class="clock" id="raceClock">0:00:00</span>
+      <span class="weather" id="weatherBox" hidden></span>
     </div>
     <div class="controls">
       <button id="pauseBtn" class="btn" disabled>Pause</button>
@@ -105,13 +106,20 @@
             <option value="66">66 (full)</option>
           </select>
         </label>
+        <label>Weather
+          <select id="weatherSelect">
+            <option value="dry" selected>Dry</option>
+            <option value="changeable">Changeable (rain may come and go)</option>
+            <option value="wet">Wet (raining at the start)</option>
+          </select>
+        </label>
         <label>Seed <input id="seedInput" type="number" min="0" max="2147483647" placeholder="random"></label>
       </div>
       <details class="history" id="historyBox" hidden>
         <summary>Your recent races</summary>
         <ol id="historyList"></ol>
       </details>
-      <p class="rules">Rules: you must use two different compounds or take a 10s penalty. A pit stop costs about 21s, less under the Virtual Safety Car.</p>
+      <p class="rules">Rules: in a dry race you must use two different dry compounds or take a 10s penalty; using Intermediates or Wets waives the rule. A pit stop costs about 21s, less under the Virtual Safety Car.</p>
       <button class="btn primary" id="startBtn" value="start">Lights out</button>
       <p class="error" id="startError" role="alert"></p>
     </form>
