@@ -81,17 +81,8 @@ Known limits: tables are created at startup (add Alembic migrations before chang
 schema with real users), and live races and rate limits live in one server's memory, so run
 a single instance until those move to a shared store such as Redis.
 
-## Accounts and data protection
-
-Argon2id password hashes, short-lived JWT access tokens plus refresh tokens in HttpOnly,
-SameSite=Strict cookies, revoked on logout or role change. Roles: viewer (watch only),
-principal (run races, command own team), admin (manage roles; the first account).
-All database access goes through `server/repo.py`, which scopes every race query to its
-owner and uses parameterised SQLModel queries only. Another user's race returns the same
-404 as a missing one. Tests in `tests/test_auth.py` try SQL injection, forged and expired
-tokens, cross-user reads and deletes, and role escalation.
 
 ## Next
 
 1. Real data: load historical sessions with FastF1, fit tyre degradation and fuel effect per
-   circuit with scikit-learn, and use them in place of the hand-tuned numbers in `tyres.py`.
+   circuit with scikit-learn, and use them in place of the hand-tuned numbers in `tyres.py`. 4 circuits ro pick from and you can pick tires before race starts.
