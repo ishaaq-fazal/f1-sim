@@ -24,6 +24,7 @@ cp .env.example .env
 uvicorn server.main:app --reload
 ```
 Open http://localhost:8000, pick a team, press **Lights out**. Use 10x-50x to speed things up.
+actual URL: https://f1-sim-2.onrender.com
 
 ## Checks
 
