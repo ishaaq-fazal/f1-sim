@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pit Wall</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">PIT WALL <span class="sub" id="trackName">Strategy Sim</span></div>
+    <div class="status">
+      <span class="flag" id="flag">READY</span>
+      <span class="lap" id="lapCounter">LAP –/–</span>
+      <span class="clock" id="raceClock">0:00:00</span>
+    </div>
+    <div class="controls">
+      <button id="pauseBtn" class="btn" disabled>Pause</button>
+      <div class="seg" id="speedSeg" role="group" aria-label="Simulation speed"></div>
+      <button id="newRaceBtn" class="btn ghost">New race</button>
+      <span class="user" id="userChip" hidden></span>
+      <button id="logoutBtn" class="btn ghost" hidden>Sign out</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel track-panel">
+      <canvas id="trackCanvas" aria-label="Track map"></canvas>
+      <div class="legend">
+        <span><i class="sw drs"></i>DRS zone</span>
+        <span><i class="sw pit"></i>Pit lane</span>
+        <span><i class="sw mine"></i>Your cars</span>
+      </div>
+    </section>
+
+    <section class="panel tower-panel">
+      <div class="panel-head">
+        <h2>Timing</h2>
+        <div class="seg small" id="gapSeg">
+          <button data-v="gap" class="on">Gap</button><button data-v="interval">Interval</button>
+        </div>
+      </div>
+      <table class="tower">
+        <thead><tr><th>P</th><th></th><th>Driver</th><th class="r" id="gapHead">Gap</th><th class="r">Last</th><th class="r">Best</th><th>Tyre</th><th class="r">Pit</th></tr></thead>
+        <tbody id="towerBody"></tbody>
+      </table>
+      <p class="hint">Click a driver to add or remove them from the lap chart.</p>
+    </section>
+
+    <section class="panel wall-panel">
+      <div class="panel-head"><h2>Your pit wall</h2><span class="team-chip" id="teamChip"></span></div>
+      <div class="wall" id="wall"></div>
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="panel-head"><h2>Lap times</h2><span class="hint" id="fastestLap"></span></div>
+      <div class="chart-box"><canvas id="lapChart"></canvas></div>
+    </section>
+
+    <section class="panel log-panel">
+      <div class="panel-head"><h2>Race control</h2></div>
+      <ol class="log" id="log"></ol>
+    </section>
+  </main>
+
+  <dialog id="authDialog">
+    <form id="authForm">
+      <h1>Pit Wall</h1>
+      <p class="lede">Sign in to run your team's strategy and keep your race history.</p>
+      <div class="row col">
+        <label>Email <input id="authEmail" type="email" autocomplete="username" required maxlength="254"></label>
+        <label>Password <input id="authPassword" type="password" autocomplete="current-password" required minlength="1" maxlength="128"></label>
+      </div>
+      <p class="rules" id="authHint">New here? Passwords need at least 10 characters.</p>
+      <div class="row">
+        <button class="btn primary" id="loginBtn" type="submit">Sign in</button>
+        <button class="btn" id="signupBtn" type="button">Create account</button>
+      </div>
+      <p class="error" id="authError" role="alert"></p>
+    </form>
+  </dialog>
+
+  <dialog id="startDialog">
+    <form method="dialog" id="startForm">
+      <h1>Pit Wall</h1>
+      <p class="lede">Pick a team. You run its strategy: call the pit stops, choose tyres and set the pace. The rest of the grid races itself.</p>
+      <fieldset>
+        <legend>Team</legend>
+        <div class="teams" id="teamPicker"></div>
+      </fieldset>
+      <div class="row">
+        <label>Laps
+          <select id="lapsSelect">
+            <option value="15">15 (quick)</option>
+            <option value="30" selected>30</option>
+            <option value="50">50</option>
+            <option value="66">66 (full)</option>
+          </select>
+        </label>
+        <label>Seed <input id="seedInput" type="number" min="0" max="2147483647" placeholder="random"></label>
+      </div>
+      <details class="history" id="historyBox" hidden>
+        <summary>Your recent races</summary>
+        <ol id="historyList"></ol>
+      </details>
+      <p class="rules">Rules: you must use two different compounds or take a 10s penalty. A pit stop costs about 21s, less under the Virtual Safety Car.</p>
+      <button class="btn primary" id="startBtn" value="start">Lights out</button>
+      <p class="error" id="startError" role="alert"></p>
+    </form>
+  </dialog>
+
+  <dialog id="resultDialog">
+    <form method="dialog">
+      <h1>Classification</h1>
+      <p class="lede" id="resultLede"></p>
+      <table class="tower results"><tbody id="resultBody"></tbody></table>
+      <div class="row end">
+        <button class="btn ghost" value="close">Close</button>
+        <button class="btn primary" id="againBtn" value="again">New race</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="vendor/chart.umd.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

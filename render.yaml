@@ -1,0 +1,28 @@
+# Render Blueprint: in the Render dashboard choose New > Blueprint and pick this repo.
+# It creates the web service and a Postgres database, and wires the secrets for you.
+services:
+  - type: web
+    name: f1-sim
+    runtime: docker
+    plan: starter            # always on; the free plan sleeps and drops live races
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: SECRET_KEY
+        generateValue: true  # Render generates a random secret; it never appears in the repo
+      - key: DATABASE_URL
+        fromDatabase:
+          name: f1-sim-db
+          property: connectionString
+      - key: ALLOWED_ORIGINS
+        sync: false          # set to your domain(s), e.g. https://pitwall.example.com
+      - key: DEFAULT_ROLE
+        value: principal
+
+databases:
+  - name: f1-sim-db
+    plan: basic-256mb
+    databaseName: f1sim
+    ipAllowList: []          # only Render services can reach the database
