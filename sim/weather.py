@@ -10,7 +10,7 @@ import math
 import random
 from dataclasses import dataclass
 
-MODES = ("dry", "wet", "changeable")
+MODES = ("dry", "wet", "changeable", "showers", "drying")
 RAMP_S = 90.0            # rain fades in/out over this long
 WETTING_S = 100.0        # time for full rain to soak a dry track
 DRYING_S = 600.0         # time for a soaked track to dry (about 6-7 laps)
@@ -48,6 +48,20 @@ class Weather:
                 if self.spells and st < self.spells[-1].end + 300:
                     continue
                 self.spells.append(RainSpell(st, st + rng.uniform(360, 1200), rng.uniform(0.3, 0.9)))
+        elif mode == "showers":
+            # Several short showers that come and go: the track never quite settles.
+            t = race_s * rng.uniform(0.05, 0.3)
+            for _ in range(rng.randint(2, 4)):
+                if t > race_s * 0.92:
+                    break
+                dur = rng.uniform(150, 420)
+                self.spells.append(RainSpell(t, t + dur, rng.uniform(0.2, 0.6)))
+                t += dur + rng.uniform(240, 0.3 * race_s)
+        elif mode == "drying":
+            # Wet at the start, but the rain stops early and the track dries out.
+            peak = rng.uniform(0.4, 0.75)
+            self.spells.append(RainSpell(-3600.0, race_s * rng.uniform(0.08, 0.3), peak))
+            self.wetness = min(1.0, peak * 1.1)
         self._wobble = rng.uniform(0, 6.28)
         self.rain = self.intensity(0.0)
 

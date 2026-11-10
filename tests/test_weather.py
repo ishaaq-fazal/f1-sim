@@ -143,3 +143,15 @@ def test_ai_does_not_switch_tyres_for_weather_when_too_few_laps_remain_to_pay_ba
     assert gain > 4                          # a real gain per lap...
     assert e._weather_call(car, 2) is None   # ...but 2 laps can't pay back a ~21 s stop
     assert e._weather_call(car, 10) in DRY
+
+
+@pytest.mark.parametrize("seed", range(3))
+def test_showers_come_and_go_and_drying_tracks_dry(seed):
+    e = RaceEngine(RaceConfig(laps=25, seed=seed, weather="showers", dnf_chance_per_lap=0))
+    assert len(e.weather.spells) >= 2 and e.weather.wetness == 0
+    e = RaceEngine(RaceConfig(laps=25, seed=seed, weather="drying", dnf_chance_per_lap=0))
+    assert e.weather.wetness > 0.3 and all(c.tyre in WET for c in e.cars)
+    while not e.finished:
+        e.step(1.0)
+    assert e.weather.wetness < 0.1
+    assert sum(c.tyre in DRY for c in e.cars if c.finished) >= 0.8 * sum(c.finished for c in e.cars)

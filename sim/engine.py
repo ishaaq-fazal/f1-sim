@@ -34,7 +34,7 @@ class RaceConfig:
     controlled_team: str | None = None   # team whose pit calls the player makes
     track_id: str = "harbourline"
     start_tyres: dict[str, str] | None = None   # player's starting compound per driver code
-    weather: str = "dry"                        # dry, wet or changeable
+    weather: str = "dry"                        # dry, wet, changeable, showers or drying
     vsc_chance_per_lap: float = 0.025
     dnf_chance_per_lap: float = 0.0008
     mistake_chance_per_lap: float = 0.012
@@ -151,7 +151,8 @@ class RaceEngine:
             car.lap_target = self._lap_time(car)
             self.cars.append(car)
         self._event("start", f"Lights out! {self.cfg.laps} laps of {self.track.name}."
-                    + {"dry": "", "wet": " It's raining: a wet race.", "changeable": " Changeable weather expected."}[self.cfg.weather])
+                    + {"dry": "", "wet": " It's raining: a wet race.", "changeable": " Changeable weather expected.",
+                       "showers": " Showers expected on and off.", "drying": " Wet start, but it should dry out."}[self.cfg.weather])
 
     # ------------------------------------------------------------- modelling
     def _lap_time(self, car: Car) -> float:

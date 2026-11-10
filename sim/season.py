@@ -71,7 +71,8 @@ def standings(rows) -> tuple[list[Standing], list[Standing]]:
 # ---------------------------------------------------------------- weather for each round
 # Each round's weather is rolled from the round's seed, so it is fixed before the race (the
 # forecast and the race always agree) but nobody can choose it.
-WEATHER_ODDS = (("dry", 0.6), ("changeable", 0.3), ("wet", 0.1))
+# Roughly one round in three is fully dry; the rest bring rain in some form.
+WEATHER_ODDS = (("dry", 0.32), ("changeable", 0.24), ("showers", 0.18), ("drying", 0.12), ("wet", 0.14))
 
 
 def round_weather(seed: int) -> str:
@@ -96,14 +97,27 @@ def round_forecast(seed: int, track_id: str, laps: int) -> dict:
     fuzz = random.Random(seed ^ 0xF0_CA57)
     wet_start = w.wetness > 0.3
     in_race = [sp for sp in w.spells if sp.end > 0 and sp.start < race_s]
+    def around(t: float) -> tuple[int, int]:
+        lap = max(1, min(laps, round(t / track.base_lap_s)))
+        return max(1, lap - fuzz.randint(2, 4)), min(laps, lap + fuzz.randint(2, 4))
+
     if wet_start:
-        chance, summary = 100, "Raining at the start: wet track"
+        chance = 100
+        first = w.spells[0]
+        later = [sp for sp in w.spells[1:] if sp.start < race_s]
+        if first.end < race_s * 0.6 and not later:
+            lo, hi = around(first.end)
+            summary = f"Wet start, rain easing off around laps {lo}-{hi}: the track will dry"
+        else:
+            summary = "Raining at the start: wet track"
     elif in_race:
         sp = min(in_race, key=lambda s: s.start)
         chance = int(min(95, max(45, 72 + fuzz.gauss(0, 10))))
-        lap = max(1, round(sp.start / track.base_lap_s))
-        lo, hi = max(1, lap - fuzz.randint(2, 4)), min(laps, lap + fuzz.randint(2, 4))
-        summary = f"Dry start, rain likely around laps {lo}-{hi}"
+        lo, hi = around(sp.start)
+        if len(in_race) >= 2:
+            summary = f"Dry start, showers on and off from around laps {lo}-{hi}"
+        else:
+            summary = f"Dry start, rain likely around laps {lo}-{hi}"
     else:
         chance = int(max(0, min(30, 8 + fuzz.gauss(0, 6))))
         summary = "Dry and settled"

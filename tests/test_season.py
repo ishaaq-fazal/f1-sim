@@ -198,8 +198,30 @@ def test_round_weather_is_random_but_fixed_by_the_seed():
     from collections import Counter
     from sim.season import round_weather
     counts = Counter(round_weather(s) for s in range(2000))
-    assert set(counts) == {"dry", "changeable", "wet"} and counts["dry"] > counts["changeable"] > counts["wet"]
+    assert set(counts) == {"dry", "changeable", "showers", "drying", "wet"}
+    assert counts["dry"] < 0.4 * 2000          # most rounds bring rain in some form
     assert all(round_weather(s) == round_weather(s) for s in range(50))
+
+
+def test_a_season_has_varied_weather():
+    from sim.season import round_weather
+    for season in range(50):
+        modes = [round_weather(season * 1000 + r) for r in range(ROUNDS)]
+        assert len(set(modes)) >= 2 and modes.count("dry") <= 7
+
+
+def test_forecast_describes_showers_and_drying_tracks():
+    from sim.season import round_forecast, round_weather
+    seen = set()
+    for seed in range(300):
+        mode, f = round_weather(seed), round_forecast(seed, "riverside", 25)
+        if mode == "showers":
+            assert "showers on and off" in f["summary"] or "rain likely" in f["summary"]
+            seen.add(mode)
+        elif mode == "drying":
+            assert f["wet_start"] and "track will dry" in f["summary"]
+            seen.add(mode)
+    assert seen == {"showers", "drying"}
 
 
 def test_forecast_matches_the_weather_the_race_actually_gets():

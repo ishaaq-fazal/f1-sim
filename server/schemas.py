@@ -23,7 +23,7 @@ class StartCmd(_Msg):
     laps: int = Field(ge=5, le=70)
     seed: int | None = Field(default=None, ge=0, le=2**31 - 1)
     track: TrackId = "harbourline"
-    weather: Literal["dry", "wet", "changeable"] = "dry"
+    weather: Literal["dry", "wet", "changeable", "showers", "drying"] = "dry"
     # Starting tyre for each of your two cars, keyed by driver code.
     tyres: dict[DriverCode, Compound] | None = Field(default=None, max_length=2)
     # Run the next round of one of your seasons. The season fixes the team, circuit, laps and weather.
