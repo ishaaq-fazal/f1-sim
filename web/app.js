@@ -72,14 +72,27 @@ async function submitAuth(kind) {
   $("authPassword").value = "";
   $("authDialog").close();
   await loadMe();
-  openStart();
+  openMenu();
 }
 
-async function openStart() {
+// mode: "quick" (single race), "season" or "career": decides which parts of the screen show.
+async function openStart(mode) {
   if (!S.user) { $("authDialog").showModal(); return; }
+  if (typeof mode === "string") S.mode = mode;
   await Promise.all([loadHistory(), loadSeason(), loadCareer()]);
   renderSeasonBox();
   renderCareerBox();
+  const m = S.mode || "quick";
+  $("seasonBox").hidden = m !== "season";
+  $("careerBox").hidden = m !== "career";
+  $("startTitle").textContent = { quick: "Quick race", season: "Season", career: "Career" }[m];
+  // Seasons and careers set the circuit from their calendar; team, laps and weather here are
+  // only used when starting a new one.
+  $("trackPicker").closest("fieldset").hidden = m !== "quick";
+  $("trackBlurb").hidden = m !== "quick";
+  $("seedInput").closest("label").hidden = m !== "quick";
+  $("historyBox").hidden = m !== "quick" || $("historyList").children.length === 0;
+  $("startBtn").hidden = m !== "quick";
   $("startDialog").showModal();
   redrawOutlines();
 }
@@ -149,10 +162,12 @@ async function init() {
     send({ type: "pause", paused: S.paused });
     $("pauseBtn").textContent = S.paused ? "Resume" : "Pause";
   });
-  $("newRaceBtn").addEventListener("click", openStart);
+  $("newRaceBtn").addEventListener("click", () => openMenu());
+  $("backToMenuBtn").addEventListener("click", () => { $("startDialog").close(); openMenu(); });
   $("startForm").addEventListener("submit", (e) => { e.preventDefault(); startRace(); });
   $("againBtn").addEventListener("click", () => setTimeout(() => {
-    if (S.seasonRace && S.seasonRace.career) openHQ(); else openStart();
+    if (S.seasonRace && S.seasonRace.career) openHQ();
+    else openStart(S.seasonRace ? "season" : "quick");
   }, 0));
   $("hqBtn").addEventListener("click", openHQ);
   $("hqGoBtn").addEventListener("click", hqGo);
@@ -162,11 +177,14 @@ async function init() {
   $("hqQuitBtn").addEventListener("click", async () => {
     if (!confirm("Abandon this career? All its seasons will be deleted.")) return;
     await api(`/api/careers/${S.career.id}`, { method: "DELETE" });
-    S.career = null; $("hqBtn").hidden = true; $("hqDialog").close(); openStart();
+    S.career = null; $("hqBtn").hidden = true; $("hqDialog").close(); openMenu();
   });
   $("standingsBtn").addEventListener("click", openStandings);
   $("resultStandingsBtn").addEventListener("click", () => { $("resultDialog").close(); openStandings(); });
-  $("nextRoundBtn").addEventListener("click", () => { $("standingsDialog").close(); openStart(); });
+  $("nextRoundBtn").addEventListener("click", () => {
+    $("standingsDialog").close();
+    if (S.mode === "career") openHQ(); else openStart("season");
+  });
   $("standingsSeg").addEventListener("click", (e) => {
     const v = e.target.dataset && e.target.dataset.v;
     if (v) { S.standingsTab = v; renderStandings(); }
@@ -174,7 +192,7 @@ async function init() {
   window.addEventListener("resize", () => { S.trackCache = null; });
   initChart();
   await loadMe();
-  openStart();
+  if (S.user) openMenu(); else $("authDialog").showModal();
   requestAnimationFrame(drawLoop);
 }
 
@@ -311,6 +329,8 @@ function onMessage(m) {
     S.track = prepTrack(m.track); S.trackCache = null;
     S.team = m.team; S.compounds = m.compounds; S.canCommand = m.can_command;
     S.seasonRace = m.season || null;
+    S.engPrev = null;
+    Sound.startLights();
     $("trackName").dataset.round = S.seasonRace ? `Round ${S.seasonRace.round}/${S.seasonRace.rounds} · ` : "";
     S.disp.clear(); S.laps.clear(); S.charted.clear(); S.fastest = null; S.resultShown = false;
     S.paused = false; $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = false;
@@ -339,12 +359,34 @@ function onState(st) {
     S.laps.get(l.code).push(l);
   });
   st.events.forEach(addLog);
+  raceSounds(st);
   S.fastest = st.fastest;
   renderHeader(st);
   renderTower(st);
   renderWall(st);
   if (st.laps.length) updateChart();
   if (st.finished && !S.resultShown) { S.resultShown = true; showResults(st); }
+}
+
+// Engine note follows your lead car's speed; effects for your pit stops, passes and the flag.
+function raceSounds(st) {
+  const mine = new Set(st.cars.filter((c) => c.controlled).map((c) => c.code));
+  for (const ev of st.events) {
+    if (ev.kind === "pit" && mine.has(ev.code)) Sound.pitStop();
+    else if (ev.kind === "finish") Sound.chequered();
+    else if (ev.kind === "overtake" && mine.has(ev.code)) Sound.overtake();
+    else if (ev.kind === "radio" && mine.has(ev.code)) Sound.radio();
+  }
+  const car = st.cars.find((c) => c.controlled && !c.finished && !c.retired);
+  if (!car || st.finished || st.paused || !S.track) { Sound.engine(0, false); return; }
+  let mps = 0;
+  const prev = S.engPrev;
+  if (prev && prev.code === car.code && st.t > prev.t) {
+    let d = car.track_pos - prev.pos; d -= Math.floor(d);          // laps covered, wrapping at the line
+    if (d < 0.5) mps = (d * S.track.length_m) / (st.t - prev.t);
+  }
+  S.engPrev = { code: car.code, pos: car.track_pos, t: st.t };
+  Sound.engine(car.in_pit ? 18 : mps, true);
 }
 
 function renderWeather(wx) {
@@ -751,7 +793,7 @@ async function startCareer() {
 
 async function openHQ() {
   if (!S.career) await loadCareer(); else await loadCareer(S.career.id);
-  if (!S.career) return openStart();
+  if (!S.career) return openStart("career");
   $("hqError").textContent = "";
   renderHQ();
   if (!$("hqDialog").open) $("hqDialog").showModal();

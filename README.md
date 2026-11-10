@@ -18,6 +18,11 @@ The race engine is Python; the browser draws it.
   Cedar Vale (short and twisty, almost no passing) and Saltmarsh Coast (two big straights, coarse surface).
 * **Starting tyres**: start each of your cars on Soft, Medium or Hard, or let the model choose.
   The two-compound rule still applies (+10 s if you only use one).
+* **Main menu, tutorial and sound**: a main menu (Quick race, Season, Career, How to play), a
+  one-minute guided tour of the race screen on a paused practice race, and synthesised sound
+  (no audio files): an engine note that follows your lead car's speed through the gears, wheel
+  guns and the pit limiter when your car stops, start lights and the chequered flag. Sound
+  settings live in the menu and are remembered in your browser.
 * **Season mode**: a 10-race championship, one round at every circuit, with the same team all
   season. Every car scores F1 points (25-18-15-12-10-8-6-4-2-1 for the top 10), and the
   leaderboard shows drivers' and teams' standings plus the calendar with each round's winner.
@@ -51,7 +56,8 @@ sim/        pure-Python race engine (no web code)
 server/     FastAPI app: serves web/, streams the race over a WebSocket, accounts + database
   repo.py       the only code that touches the database (every query scoped to its owner)
   cli.py        admin commands: list-users, reset-password
-web/        HTML/CSS/JS front end (canvas track map, timing tower, Chart.js lap chart)
+web/        HTML/CSS/JS front end (canvas track map, timing tower, Chart.js lap chart,
+            menu.js main menu + tutorial, sound.js Web Audio sounds)
 tests/      pytest: engine, circuits, accounts/authorisation and security checks
 ```
 
@@ -71,7 +77,7 @@ Forgot a password? `python -m server.cli reset-password you@example.com`
 ## Checks
 
 ```bash
-pytest -q                          # 153 tests: engine, circuits, weather, seasons, career, login, security
+pytest -q                          # 154 tests: engine, circuits, weather, seasons, career, login, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 

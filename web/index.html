@@ -20,7 +20,8 @@
       <div class="seg" id="speedSeg" role="group" aria-label="Simulation speed"></div>
       <button id="hqBtn" class="btn ghost" hidden>Team HQ</button>
       <button id="standingsBtn" class="btn ghost" hidden>Standings</button>
-      <button id="newRaceBtn" class="btn ghost">New race</button>
+      <button id="soundBtn" class="btn ghost" type="button" aria-label="Sound on or off" title="Sound">Sound on</button>
+      <button id="newRaceBtn" class="btn ghost">Menu</button>
       <span class="user" id="userChip" hidden></span>
       <button id="logoutBtn" class="btn ghost" hidden>Sign out</button>
     </div>
@@ -83,9 +84,43 @@
     </form>
   </dialog>
 
+  <dialog id="menuDialog" class="menu">
+    <div class="menu-inner">
+      <h1 class="menu-title">PIT WALL</h1>
+      <p class="lede">Run an F1 team's race strategy: pit stops, tyres, pace and the weather. The rest of the grid races itself.</p>
+      <div class="menu-grid">
+        <button type="button" class="menu-card" data-mode="quick"><b>Quick race</b><span>One race on any circuit, any team, any weather.</span></button>
+        <button type="button" class="menu-card" data-mode="season"><b>Season</b><span>10 rounds, one at every circuit, scored with F1 points.</span></button>
+        <button type="button" class="menu-card" data-mode="career"><b>Career</b><span>Season after season: budget, car upgrades and driver contracts.</span></button>
+        <button type="button" class="menu-card" data-mode="tutorial"><b>How to play</b><span>A one-minute guided tour on a practice race.</span></button>
+      </div>
+      <fieldset class="menu-sound">
+        <legend>Sound</legend>
+        <label><input type="checkbox" id="sndEffects"> Effects (start lights, pit stops, chequered flag)</label>
+        <label><input type="checkbox" id="sndEngine"> Engine note of your car</label>
+        <label>Volume <input type="range" id="sndVolume" min="0" max="1" step="0.05"></label>
+      </fieldset>
+      <p class="rules" id="menuUser"></p>
+    </div>
+  </dialog>
+
+  <div id="tour" class="tour" hidden>
+    <div class="tour-spot" id="tourSpot"></div>
+    <div class="tour-card" id="tourCard" role="dialog" aria-live="polite">
+      <p class="tour-step" id="tourStep"></p>
+      <h3 id="tourTitle"></h3>
+      <p id="tourText"></p>
+      <div class="row end">
+        <button type="button" class="btn ghost" id="tourSkip">Skip tour</button>
+        <button type="button" class="btn" id="tourBack">Back</button>
+        <button type="button" class="btn primary" id="tourNext">Next</button>
+      </div>
+    </div>
+  </div>
+
   <dialog id="startDialog">
     <form method="dialog" id="startForm">
-      <h1>Pit Wall</h1>
+      <h1 id="startTitle">Pit Wall</h1>
       <p class="lede">Pick a team. You run its strategy: call the pit stops, choose tyres and set the pace. The rest of the grid races itself.</p>
       <section class="season-box" id="careerBox" aria-label="Career"></section>
       <section class="season-box" id="seasonBox" aria-label="Season"></section>
@@ -124,7 +159,10 @@
         <ol id="historyList"></ol>
       </details>
       <p class="rules">Rules: in a dry race you must use two different dry compounds or take a 10s penalty; using Intermediates or Wets waives the rule. A pit stop costs about 21s, less under the Virtual Safety Car.</p>
-      <button class="btn primary" id="startBtn" value="start">Lights out</button>
+      <div class="row">
+        <button class="btn ghost" id="backToMenuBtn" type="button">Back to menu</button>
+        <button class="btn primary" id="startBtn" value="start">Lights out</button>
+      </div>
       <p class="error" id="startError" role="alert"></p>
     </form>
   </dialog>
@@ -186,6 +224,8 @@
   </dialog>
 
   <script src="vendor/chart.umd.js"></script>
+  <script src="sound.js"></script>
   <script src="app.js"></script>
+  <script src="menu.js"></script>
 </body>
 </html>

@@ -193,3 +193,13 @@ def test_pages_are_revalidated_and_api_responses_not_cached(client):
     assert client.get("/").headers["cache-control"] == "no-cache"
     assert client.get("/app.js").headers["cache-control"] == "no-cache"
     assert client.get("/api/me").headers["cache-control"] == "no-store"
+
+
+def test_menu_tutorial_and_sound_scripts_are_served_from_our_own_origin(client):
+    page = client.get("/").text
+    for name in ("sound.js", "app.js", "menu.js"):
+        assert f'<script src="{name}"></script>' in page
+        r = client.get(f"/{name}")
+        assert r.status_code == 200 and "javascript" in r.headers["content-type"]
+        assert ".innerHTML" not in r.text           # DOM text only ever set with textContent
+    assert 'id="menuDialog"' in page and 'id="tour"' in page
