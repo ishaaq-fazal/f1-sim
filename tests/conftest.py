@@ -28,6 +28,9 @@ PASSWORD = "correct-horse-battery"
 def fresh_db():
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
+    from server import routes
+    routes._lockout.failures.clear()          # each test starts with no failed-login history
+    routes._lockout.locked_until.clear()
     yield
 
 

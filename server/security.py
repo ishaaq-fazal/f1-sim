@@ -35,6 +35,13 @@ class SecurityHeaders(BaseHTTPMiddleware):
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "no-referrer"
         resp.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if "cache-control" not in resp.headers:
+            if request.url.path.startswith("/api/"):
+                resp.headers["Cache-Control"] = "no-store"     # account data never sits in a cache
+            else:
+                # Pages and scripts: browsers must re-check with the server (cheap, via ETag),
+                # so a new deploy shows up on the next page load instead of an old cached copy.
+                resp.headers["Cache-Control"] = "no-cache"
         return resp
 
 
@@ -47,6 +54,7 @@ class SlidingWindow:
 
     def allow(self, key: str) -> bool:
         now = time.monotonic()
+        self._prune(now)
         q = self.hits[key]
         while q and now - q[0] > self.window:
             q.popleft()
@@ -54,6 +62,50 @@ class SlidingWindow:
             return False
         q.append(now)
         return True
+
+    def _prune(self, now: float) -> None:
+        # Drop keys with no recent hits, so a flood of made-up emails or IPs can't fill memory.
+        if len(self.hits) > 10_000:
+            for k in [k for k, q in self.hits.items() if not q or now - q[-1] > self.window]:
+                del self.hits[k]
+
+
+class LoginLockout:
+    """Lock an email after `max_failures` wrong passwords within `window` seconds, for `lock_s`.
+
+    Keyed on the email (not the IP), so spreading guesses over many IPs doesn't help.
+    A successful login clears the count. The same 429 is returned for unknown emails, so a
+    lockout doesn't reveal whether an account exists."""
+
+    def __init__(self, max_failures: int = 10, window: float = 900.0, lock_s: float = 900.0):
+        self.max_failures, self.window, self.lock_s = max_failures, window, lock_s
+        self.failures: dict[str, deque[float]] = defaultdict(deque)
+        self.locked_until: dict[str, float] = {}
+
+    def is_locked(self, key: str) -> bool:
+        until = self.locked_until.get(key)
+        if until is None:
+            return False
+        if time.monotonic() >= until:
+            del self.locked_until[key]
+            self.failures.pop(key, None)
+            return False
+        return True
+
+    def failed(self, key: str) -> None:
+        now = time.monotonic()
+        if len(self.failures) > 10_000:           # bound memory under a spray of random emails
+            for k in [k for k, q in self.failures.items() if not q or now - q[-1] > self.window]:
+                del self.failures[k]
+        q = self.failures[key]
+        while q and now - q[0] > self.window:
+            q.popleft()
+        q.append(now)
+        if len(q) >= self.max_failures:
+            self.locked_until[key] = now + self.lock_s
+
+    def succeeded(self, key: str) -> None:
+        self.failures.pop(key, None)
 
 
 class RateLimit(BaseHTTPMiddleware):

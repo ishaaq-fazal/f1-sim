@@ -56,7 +56,15 @@ async function submitAuth(kind) {
   const r = await api(`/api/auth/${kind}`, { method: "POST", body: { email, password } });
   if (!r.ok) {
     let msg = "Something went wrong.";
-    if (r.status === 422) msg = kind === "signup" ? "Use a valid email and a password of 10+ characters." : "Enter a valid email and password.";
+    if (r.status === 422) {
+      msg = kind === "signup" ? "Use a valid email and a password of 10+ characters." : "Enter a valid email and password.";
+      try {
+        // our own password rules come back as "Value error, <reason>"
+        const d = (await r.json()).detail;
+        const rule = Array.isArray(d) && d.map((x) => String(x.msg || "")).find((m) => m.startsWith("Value error, "));
+        if (kind === "signup" && rule) msg = rule.slice("Value error, ".length) + ".";
+      } catch (_) { /* keep default */ }
+    }
     else { try { msg = (await r.json()).detail || msg; } catch (_) { /* keep default */ } }
     $("authError").textContent = msg;
     return;

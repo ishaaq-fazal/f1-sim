@@ -15,11 +15,13 @@ from sim.season import POINTS, SCHEDULE, standings
 
 from .schemas import (DriverStandingOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
                       SignupIn, TeamStandingOut, UserOut)
-from .security import SlidingWindow
+from .security import LoginLockout, SlidingWindow
 
 router = APIRouter(prefix="/api")
 _login_ip = SlidingWindow(settings.login_attempts_per_min * 4, 60.0)
 _login_email = SlidingWindow(settings.login_attempts_per_min, 60.0)
+_lockout = LoginLockout(max_failures=10, window=15 * 60, lock_s=15 * 60)
+_TOO_MANY = "Too many attempts, try again later"
 
 
 def _out(u: User) -> UserOut:
@@ -30,7 +32,7 @@ def _out(u: User) -> UserOut:
 def signup(body: SignupIn, response: Response, request: Request, s: Session = Depends(get_session)):
     ip = request.client.host if request.client else "unknown"
     if not _login_ip.allow(ip):
-        raise HTTPException(429, "Too many attempts, try again in a minute")
+        raise HTTPException(429, _TOO_MANY)
     try:
         user = repo.create_user(s, body.email, hash_password(body.password))
     except IntegrityError:
@@ -44,11 +46,13 @@ def signup(body: SignupIn, response: Response, request: Request, s: Session = De
 @router.post("/auth/login", response_model=UserOut)
 def login(body: LoginIn, response: Response, request: Request, s: Session = Depends(get_session)):
     ip = request.client.host if request.client else "unknown"
-    if not _login_ip.allow(ip) or not _login_email.allow(body.email):
-        raise HTTPException(429, "Too many attempts, try again in a minute")
+    if _lockout.is_locked(body.email) or not _login_ip.allow(ip) or not _login_email.allow(body.email):
+        raise HTTPException(429, _TOO_MANY)
     user = repo.user_by_email(s, body.email)
     if not verify_password(body.password, user.password_hash if user else None):
+        _lockout.failed(body.email)           # counted for unknown emails too, so both look the same
         raise HTTPException(401, "Wrong email or password")
+    _lockout.succeeded(body.email)
     set_auth_cookies(response, user)
     return _out(user)
 

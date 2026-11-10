@@ -186,3 +186,9 @@ def test_ws_rejects_unknown_weather(client):
     with client.websocket_connect("/ws/race", headers=ORIGIN) as ws:
         ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "weather": "snow"}))
         assert ws.receive_json()["detail"] == "Invalid message"
+
+
+def test_pages_are_revalidated_and_api_responses_not_cached(client):
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert client.get("/app.js").headers["cache-control"] == "no-cache"
+    assert client.get("/api/me").headers["cache-control"] == "no-store"

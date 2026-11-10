@@ -90,11 +90,22 @@ class SetupOut(BaseModel):
 # Response models list exactly what may leave the server: never password hashes or token versions.
 from datetime import datetime  # noqa: E402
 
-from pydantic import EmailStr, field_validator  # noqa: E402
+from pydantic import EmailStr, field_validator, model_validator  # noqa: E402
 
 
 class _In(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+# Passwords of 10+ characters that are still among the most guessed. Checked case-insensitively.
+_COMMON_PASSWORDS = {
+    "1234567890", "12345678910", "0123456789", "0987654321", "1111111111", "123456789a",
+    "password12", "password123", "password1234", "passw0rd123", "qwertyuiop", "qwerty1234",
+    "qwerty12345", "1q2w3e4r5t", "1qaz2wsx3edc", "asdfghjkl1", "zxcvbnm123", "iloveyou12",
+    "letmein123", "welcome123", "admin12345", "abc1234567", "abcdefghij", "football12",
+    "liverpool1", "chelsea123", "arsenal123", "manchester", "formula1f1", "ferrari123",
+    "lewishamilton", "maxverstappen", "changeme12", "trustno1234",
+}
 
 
 class SignupIn(_In):
@@ -105,6 +116,18 @@ class SignupIn(_In):
     @classmethod
     def _lower(cls, v: str) -> str:
         return v.lower()
+
+    @model_validator(mode="after")
+    def _strong_enough(self):
+        pw = self.password.lower()
+        if pw in _COMMON_PASSWORDS:
+            raise ValueError("That password is too common")
+        if len(set(pw)) < 4:
+            raise ValueError("Use a password with more variety")
+        local = self.email.split("@")[0]
+        if len(local) >= 4 and local in pw:
+            raise ValueError("Don't use your email in your password")
+        return self
 
 
 class LoginIn(_In):

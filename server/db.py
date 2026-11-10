@@ -96,6 +96,9 @@ engine = _make_engine(settings.database_url)
 
 def init_db() -> None:
     log.info("Preparing database (%s)", engine.dialect.name)
+    if settings.env != "dev" and engine.dialect.name == "sqlite":
+        log.warning("DATABASE_URL is not set: accounts and races are saved in a file inside this server "
+                    "and will be LOST on the next deploy or restart. Add a Postgres DATABASE_URL.")
     with engine.begin() as conn:
         if engine.dialect.name == "postgresql":
             # Don't wait forever if another connection holds a lock on a table we touch.
