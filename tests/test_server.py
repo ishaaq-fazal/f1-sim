@@ -35,7 +35,7 @@ def test_security_headers(client):
 
 def test_setup_lists_teams(client):
     data = client.get("/api/setup").json()
-    assert len(data["teams"]) == 10 and set(data) == {"teams", "tracks", "laps_default", "speeds"}
+    assert len(data["teams"]) == 10 and set(data) == {"teams", "tracks", "laps_default", "speeds", "schedule"}
 
 
 def test_source_and_dotfiles_not_served(client):
@@ -134,7 +134,8 @@ def test_ws_oversized_message_closes(client):
 
 def test_setup_lists_tracks_and_team_drivers(client):
     data = client.get("/api/setup").json()
-    assert {t["id"] for t in data["tracks"]} == {"harbourline", "monteverde", "sandridge", "alderwood"}
+    assert len(data["tracks"]) == 10 and {"harbourline", "neon", "glacier"} <= {t["id"] for t in data["tracks"]}
+    assert sorted(data["schedule"]) == sorted(t["id"] for t in data["tracks"])
     assert all(len(t["outline"]) > 50 for t in data["tracks"])
     aurora = next(t for t in data["teams"] if t["id"] == "aurora")
     assert [d["code"] for d in aurora["drivers"]] == ["MAR", "OKA"]

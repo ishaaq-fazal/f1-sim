@@ -154,6 +154,50 @@ ALDERWOOD = [
     (2350, 550), (2400, 900), (2150, 1150), (2250, 1450), (2050, 1680),
 ]
 
+# Fast river-bank ring: long straights joined by a few big corners and one chicane.
+RIVERSIDE = [
+    (1500, 1700), (600, 1700), (350, 1600), (250, 1350), (300, 1000), (250, 650), (350, 400),
+    (600, 300), (1500, 300), (2400, 300), (2650, 400), (2750, 650), (2700, 900), (2500, 1000),
+    (2700, 1100), (2750, 1350), (2650, 1600), (2400, 1700),
+]
+
+# Long mountain circuit with hairpins; cold air keeps tyre wear low.
+GLACIER = [
+    (1800, 1900), (600, 1900), (300, 1800), (250, 1500), (500, 1350), (900, 1350), (1000, 1200),
+    (800, 1050), (350, 1000), (250, 750), (400, 500), (900, 450), (1300, 250), (1800, 200),
+    (2300, 350), (2400, 650), (2100, 850), (2200, 1100), (2700, 1200), (2850, 1500), (2700, 1800),
+    (2300, 1900),
+]
+
+# Night street circuit round city blocks: 90-degree corners and long boulevards.
+NEON = [
+    (1600, 1800), (700, 1800), (600, 1700), (600, 1400), (300, 1400), (200, 1300), (200, 500),
+    (300, 400), (900, 400), (1000, 500), (1000, 800), (1100, 900), (1500, 900), (1600, 800),
+    (1600, 300), (1700, 200), (2100, 200), (2500, 200), (2600, 300), (2600, 1000), (2600, 1700),
+    (2500, 1800), (2050, 1800),
+]
+
+# High-speed moorland sweepers that punish the tyres.
+HIGHMOOR = [
+    (1500, 1800), (700, 1750), (350, 1550), (300, 1200), (550, 950), (1000, 900), (1200, 700),
+    (1000, 450), (1200, 250), (1700, 250), (2100, 450), (2600, 350), (2900, 600), (2800, 1000),
+    (2400, 1150), (2500, 1500), (2200, 1750),
+]
+
+# Short, twisty woodland track: no room to pass.
+CEDARVALE = [
+    (1100, 1500), (500, 1500), (300, 1350), (350, 1100), (650, 1000), (600, 800), (300, 700),
+    (300, 400), (550, 250), (900, 350), (1050, 600), (1300, 700), (1500, 450), (1800, 350),
+    (2000, 550), (1900, 850), (1650, 950), (1800, 1200), (1700, 1450),
+]
+
+# Windswept coastal circuit: two long straights, slow corners, a coarse sea-air surface.
+SALTMARSH = [
+    (1700, 1600), (400, 1600), (250, 1450), (300, 1250), (700, 1150), (800, 950), (500, 800),
+    (300, 600), (400, 350), (700, 300), (2300, 300), (2550, 400), (2600, 650), (2350, 800),
+    (2000, 850), (1900, 1000), (2300, 1150), (2600, 1300), (2550, 1550), (2300, 1600),
+]
+
 TRACK_SPECS = {
     "harbourline": dict(name="Harbourline Circuit", ctrl=HARBOURLINE, length_m=5120, base_lap_s=88.0,
                         pit_loss_s=21.5, start_near=(1650, 2002), wear_mult=1.0, overtake_mult=1.0,
@@ -167,6 +211,24 @@ TRACK_SPECS = {
     "alderwood": dict(name="Alderwood Park", ctrl=ALDERWOOD, length_m=4310, base_lap_s=79.0,
                       pit_loss_s=20.5, start_near=(1100, 1700), wear_mult=1.15, overtake_mult=0.8,
                       blurb="Flowing parkland sweeps that load the tyres; passing takes commitment."),
+    "riverside": dict(name="Riverside Ring", ctrl=RIVERSIDE, length_m=4650, base_lap_s=76.0,
+                      pit_loss_s=20.0, start_near=(1100, 1700), wear_mult=0.9, overtake_mult=1.35,
+                      blurb="Long straights and slipstreams: easy to pass, kind to tyres."),
+    "glacier": dict(name="Glacier Pass", ctrl=GLACIER, length_m=6250, base_lap_s=102.0,
+                    pit_loss_s=24.0, start_near=(1200, 1900), wear_mult=0.7, overtake_mult=0.9,
+                    blurb="The longest lap: mountain hairpins and cold air, so tyres last and one-stops rule."),
+    "neon": dict(name="Neon Bay Street Circuit", ctrl=NEON, length_m=5050, base_lap_s=96.0,
+                 pit_loss_s=22.0, start_near=(1150, 1800), wear_mult=0.85, overtake_mult=0.55,
+                 blurb="Night race round city blocks: walls everywhere and few places to pass."),
+    "highmoor": dict(name="Highmoor Circuit", ctrl=HIGHMOOR, length_m=5850, base_lap_s=86.0,
+                     pit_loss_s=21.0, start_near=(1100, 1780), wear_mult=1.3, overtake_mult=1.1,
+                     blurb="Flat-out moorland sweepers: very fast, hard on tyres, good racing."),
+    "cedarvale": dict(name="Cedar Vale", ctrl=CEDARVALE, length_m=3850, base_lap_s=71.0,
+                      pit_loss_s=18.5, start_near=(800, 1500), wear_mult=1.05, overtake_mult=0.45,
+                      blurb="Short and twisty through the woods: qualifying and strategy decide it."),
+    "saltmarsh": dict(name="Saltmarsh Coast", ctrl=SALTMARSH, length_m=5350, base_lap_s=90.0,
+                      pit_loss_s=22.5, start_near=(1050, 1600), wear_mult=1.25, overtake_mult=1.25,
+                      blurb="Windswept seaside track with two big straights and a coarse surface."),
 }
 DEFAULT_TRACK = "harbourline"
 _cache: dict[str, Track] = {}

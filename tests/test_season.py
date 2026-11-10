@@ -14,12 +14,12 @@ from tests.conftest import ORIGIN, PASSWORD
 
 
 # ---------------------------------------------------------------- rules
-def test_eight_rounds_two_at_each_circuit():
-    assert ROUNDS == 8
-    assert all(SCHEDULE.count(t) == 2 for t in set(SCHEDULE)) and len(set(SCHEDULE)) == 4
-    assert track_for_round(1) == track_for_round(5)
+def test_ten_rounds_one_at_every_circuit():
+    from sim.track import TRACK_SPECS
+    assert ROUNDS == 10 == len(TRACK_SPECS)
+    assert sorted(SCHEDULE) == sorted(TRACK_SPECS)          # every circuit exactly once
     with pytest.raises(ValueError):
-        track_for_round(9)
+        track_for_round(11)
 
 
 def test_f1_points_for_the_top_ten_only():
@@ -84,7 +84,7 @@ def test_full_season_scores_f1_points_and_finishes(alice):
     for _ in range(ROUNDS):
         finish_round("alice@example.com", sid)
     d = alice.get(f"/api/seasons/{sid}").json()
-    assert d["season"]["finished"] and d["season"]["rounds_done"] == 8
+    assert d["season"]["finished"] and d["season"]["rounds_done"] == ROUNDS
     assert all(r["done"] and r["winner"] for r in d["rounds"])
     total = sum(x["points"] for x in d["drivers"])
     with Session(engine) as s:
@@ -173,7 +173,7 @@ def test_ws_season_round_uses_the_seasons_team_and_circuit(alice):
         init = ws.receive_json()
         assert init["type"] == "init" and init["team"] == "vantage" and init["laps"] == 7
         assert init["track"]["id"] == track_for_round(2)
-        assert init["season"] == {"id": sid, "round": 2, "rounds": 8}
+        assert init["season"] == {"id": sid, "round": 2, "rounds": ROUNDS}
 
 
 def test_ws_refuses_another_users_season(alice, bob):

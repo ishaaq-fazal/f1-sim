@@ -1,4 +1,4 @@
-"""Season mode: an 8-round championship, two races at each circuit, scored with F1 points.
+"""Season mode: a 10-round championship, one race at each circuit, scored with F1 points.
 
 Pure Python (no web or database code), so the rules can be tested on their own.
 """
@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# Round 1-4 visit each circuit once, rounds 5-8 visit them again in the same order.
-SCHEDULE: tuple[str, ...] = ("harbourline", "monteverde", "sandridge", "alderwood") * 2
+# One round at each circuit, ordered so street, fast and high-wear tracks are mixed through the year.
+SCHEDULE: tuple[str, ...] = ("harbourline", "monteverde", "riverside", "sandridge", "cedarvale",
+                             "glacier", "alderwood", "neon", "saltmarsh", "highmoor")
 ROUNDS = len(SCHEDULE)
 
 # Points for P1..P10, as in Formula 1. Retired cars score nothing.

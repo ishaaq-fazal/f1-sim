@@ -84,6 +84,7 @@ class SetupOut(BaseModel):
     tracks: list[TrackOut]
     laps_default: int
     speeds: list[int]
+    schedule: list[str]            # season calendar: circuit id for each round
 
 
 # ------------------------------------------------------------------ accounts

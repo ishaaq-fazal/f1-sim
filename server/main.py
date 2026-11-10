@@ -21,7 +21,7 @@ from sqlmodel import Session
 
 from sim import TEAMS, RaceConfig, RaceEngine, default_grid
 from sim import career as career_rules
-from sim.season import ROUNDS, track_for_round
+from sim.season import ROUNDS, SCHEDULE, track_for_round
 from sim.track import TRACK_SPECS, get_track
 from sim.tyres import COMPOUNDS
 
@@ -85,7 +85,8 @@ def setup() -> SetupOut:
         tracks.append(TrackOut(id=tid, name=t.name, length_m=round(t.length_m), base_lap_s=t.base_lap_s,
                                wear=t.wear_mult, overtaking=t.overtake_mult, blurb=t.blurb,
                                outline=[[round(x), round(y)] for x, y in t.points[::step]]))
-    return SetupOut(teams=teams, tracks=tracks, laps_default=30, speeds=[1, 2, 5, 10, 20, 50])
+    return SetupOut(teams=teams, tracks=tracks, laps_default=30, speeds=[1, 2, 5, 10, 20, 50],
+                    schedule=list(SCHEDULE))
 
 
 _ws_per_ip: Counter[str] = Counter()

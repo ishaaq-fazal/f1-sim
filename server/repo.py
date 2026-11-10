@@ -247,7 +247,7 @@ def career_action(s: Session, actor: User, career_id: int, action: str, **kw) ->
             career_rules.renew_driver(state, kw["code"], kw["years"], season.rounds_done)
         elif action == "next_season":
             if not season.finished:
-                raise career_rules.CareerError("Finish this season's 8 rounds first")
+                raise career_rules.CareerError(f"Finish this season's {ROUNDS} rounds first")
             _, teams = standings(season_results(s, actor, season.id))
             drivers, _ = standings(season_results(s, actor, season.id))
             mine = next((i for i, t in enumerate(teams, 1) if t.key == career.team), len(teams))

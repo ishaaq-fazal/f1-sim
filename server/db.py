@@ -58,7 +58,7 @@ class Career(SQLModel, table=True):
 
 
 class Season(SQLModel, table=True):
-    """An 8-round championship run by one user with one team."""
+    """A 10-round championship (one race per circuit) run by one user with one team."""
     id: int | None = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id", index=True)
     career_id: int | None = Field(default=None, foreign_key="career.id", index=True)

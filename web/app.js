@@ -578,7 +578,7 @@ function renderSeasonBox() {
     const next = sz.rounds_done + 1;
     const mine = myTeamStanding();
     text.append(el("b", null, `Season with ${teamName(sz.team)}`),
-      document.createTextNode(` · round ${next} of 8 at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · ${sz.weather}` +
+      document.createTextNode(` · round ${next} of ${ROUNDS()} at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · ${sz.weather}` +
         (mine ? ` · teams' championship P${mine.pos} on ${mine.points} pts` : "")));
     const go = el("button", "btn primary", `Start round ${next}`); go.type = "button";
     go.addEventListener("click", () => startSeasonRound(sz.id));
@@ -596,7 +596,7 @@ function renderSeasonBox() {
     if (radio && !radio.checked) { radio.checked = true; buildTyrePicker(); }
   } else {
     text.append(el("b", null, "Season mode"),
-      document.createTextNode(": 8 races, 2 at each circuit, scored with F1 points (25-18-15-12-10-8-6-4-2-1). " +
+      document.createTextNode(`: ${ROUNDS()} races, one at every circuit, scored with F1 points (25-18-15-12-10-8-6-4-2-1). ` +
         "Uses the team, laps and weather you pick below, and you keep that team all season."));
     const go = el("button", "btn", "Start a season"); go.type = "button";
     go.addEventListener("click", startSeason);
@@ -646,7 +646,7 @@ async function openStandings() {
 function renderStandings() {
   const d = S.season, sz = d.season;
   for (const b of $("standingsSeg").children) b.classList.toggle("on", b.dataset.v === S.standingsTab);
-  $("standingsLede").textContent = `${teamName(sz.team)} · ${sz.finished ? "season complete" : `after ${sz.rounds_done} of 8 rounds`}` +
+  $("standingsLede").textContent = `${teamName(sz.team)} · ${sz.finished ? "season complete" : `after ${sz.rounds_done} of ${ROUNDS()} rounds`}` +
     ` · ${sz.laps} laps · ${sz.weather}`;
   $("standingsRules").textContent = `Points for P1 to P10: ${d.points_system.join(", ")}. Retirements score nothing. Ties go to the most wins, then most 2nd places.`;
   const nb = $("nextRoundBtn");
@@ -712,7 +712,7 @@ function renderCareerBox() {
   const text = el("div", "stext");
   const buttons = [];
   if (c) {
-    const where = c.season_finished ? "season over" : `round ${c.rounds_done + 1} of 8 at ${trackName(track8(c.rounds_done + 1))}`;
+    const where = c.season_finished ? "season over" : `round ${c.rounds_done + 1} of ${ROUNDS()} at ${trackName(track8(c.rounds_done + 1))}`;
     text.append(el("b", null, `Career with ${teamName(c.team)}`),
       document.createTextNode(` · season ${c.season_no} · ${where} · budget ${money(c.budget)}`));
     const hq = el("button", "btn primary", "Team HQ"); hq.type = "button";
@@ -730,8 +730,8 @@ function renderCareerBox() {
   box.replaceChildren(text, ...buttons);
 }
 
-const TRACK_ORDER = ["harbourline", "monteverde", "sandridge", "alderwood"];
-const track8 = (round) => TRACK_ORDER[(round - 1) % 4];
+const ROUNDS = () => S.setup.schedule.length;
+const track8 = (round) => S.setup.schedule[(round - 1) % ROUNDS()];
 
 async function startCareer() {
   const team = document.querySelector('input[name="team"]:checked').value;
@@ -774,7 +774,7 @@ function renderHQ() {
   const c = S.career;
   const pre = c.rounds_done === 0 && !c.season_finished;
   $("hqLede").textContent = `${teamName(c.team)} · Season ${c.season_no} · ` +
-    (c.season_finished ? "season complete" : `${c.rounds_done} of 8 rounds raced`) + ` · ${c.laps} laps · ${c.weather}`;
+    (c.season_finished ? "season complete" : `${c.rounds_done} of ${ROUNDS()} rounds raced`) + ` · ${c.laps} laps · ${c.weather}`;
   const stat = (label, value) => { const d = el("div", null, label); d.prepend(el("b", null, value)); return d; };
   const wages = c.drivers.reduce((a, d) => a + d.salary, 0);
   $("hqMoney").replaceChildren(stat("Budget", money(c.budget)), stat("Driver wages this season", money(wages)),

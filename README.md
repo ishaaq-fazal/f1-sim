@@ -10,12 +10,15 @@ The race engine is Python; the browser draws it.
 
 ## Features
 
-* **4 original circuits**, each with its own layout, lap length, tyre wear and overtaking difficulty:
+* **10 original circuits**, each with its own layout, lap length, tyre wear and overtaking difficulty:
   Harbourline (balanced), Monteverde Street Circuit (very hard to pass, easy on tyres),
-  Sandridge Raceway (very high wear, easy to pass), Alderwood Park (high wear, hard to pass).
+  Sandridge Raceway (very high wear, easy to pass), Alderwood Park (high wear, hard to pass),
+  Riverside Ring (long straights, easy to pass), Glacier Pass (longest lap, very low wear),
+  Neon Bay Street Circuit (night street race, hard to pass), Highmoor Circuit (very fast, high wear),
+  Cedar Vale (short and twisty, almost no passing) and Saltmarsh Coast (two big straights, coarse surface).
 * **Starting tyres**: start each of your cars on Soft, Medium or Hard, or let the model choose.
   The two-compound rule still applies (+10 s if you only use one).
-* **Season mode**: an 8-race championship, two rounds at each circuit, with the same team all
+* **Season mode**: a 10-race championship, one round at every circuit, with the same team all
   season. Every car scores F1 points (25-18-15-12-10-8-6-4-2-1 for the top 10), and the
   leaderboard shows drivers' and teams' standings plus the calendar with each round's winner.
   Seasons are saved to your account; only you can see or delete them.
@@ -38,7 +41,7 @@ The race engine is Python; the browser draws it.
 
 ```
 sim/        pure-Python race engine (no web code)
-  track.py      the 4 circuits: geometry, speed profile, sectors, DRS zones, tyre wear, overtaking
+  track.py      the 10 circuits: geometry, speed profile, sectors, DRS zones, tyre wear, overtaking
   tyres.py      compounds: pace offset, degradation, wear cliff; pace modes
   strategy.py   pit strategy optimiser (used by AI teams and for "model's best plan")
   engine.py     the race: lap times, fuel, traffic, overtakes, pit stops, VSC, DNFs, starting tyres
@@ -68,7 +71,7 @@ Forgot a password? `python -m server.cli reset-password you@example.com`
 ## Checks
 
 ```bash
-pytest -q                          # 146 tests: engine, circuits, weather, seasons, career, login, security
+pytest -q                          # 153 tests: engine, circuits, weather, seasons, career, login, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 

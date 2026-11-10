@@ -145,3 +145,31 @@ def test_grid_starts_on_a_mix_of_compounds():
     for seed in range(5):
         seen |= {c.tyre for c in RaceEngine(RaceConfig(laps=30, seed=seed)).cars}
     assert len(seen) >= 2
+
+
+def test_every_circuit_is_a_clean_loop_and_races_to_the_flag():
+    """All 10 circuits: no self-crossing outline, two DRS zones, sensible lap times, a full race runs."""
+    import numpy as np
+    from sim.track import TRACK_SPECS, get_track
+
+    def side(p, q, r):
+        return np.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
+
+    assert len(TRACK_SPECS) == 10
+    for tid in TRACK_SPECS:
+        t = get_track(tid)
+        P = t.points[::2]
+        n = len(P)
+        for i in range(n):
+            a, b = P[i], P[(i + 1) % n]
+            for j in range(i + 2, n):
+                if (j + 1) % n == i:
+                    continue
+                c, d = P[j], P[(j + 1) % n]
+                assert not (side(a, b, c) * side(a, b, d) < 0 and side(c, d, a) * side(c, d, b) < 0), tid
+        assert len(t.drs_zones) == 2 and 3000 < t.length_m < 7000
+        e = RaceEngine(RaceConfig(laps=3, seed=1, track_id=tid, dnf_chance_per_lap=0))
+        while not e.finished:
+            e.step(5.0)
+        laps = [l["time"] for c in e.cars for l in c.laps if l["lap"] > 1 and not l["pit"]]
+        assert t.base_lap_s - 3 < min(laps) < t.base_lap_s + 8, tid
