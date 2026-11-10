@@ -13,6 +13,8 @@ from sqlmodel import Session, delete, func, select
 
 from .config import settings
 import copy
+import hashlib
+import hmac
 import secrets
 
 from sim import career as career_rules
@@ -142,6 +144,13 @@ def season_results(s: Session, actor: User, season_id: int) -> list[SeasonResult
          .where(SeasonResult.season_id == season_id, SeasonResult.owner_id == actor.id)
          .order_by(SeasonResult.round, SeasonResult.position))
     return list(s.exec(q))
+
+
+def round_seed(season_id: int, round_no: int) -> int:
+    """Seed for one round of one season: fixed (so the forecast matches the race and a round
+    can't be re-rolled for better weather) and unguessable without the server's secret."""
+    mac = hmac.new(settings.secret_key.encode(), f"round:{season_id}:{round_no}".encode(), hashlib.sha256)
+    return int.from_bytes(mac.digest()[:4], "big") % (2**31)
 
 
 def record_round(s: Session, actor: User, season_id: int, round_no: int, track: str,

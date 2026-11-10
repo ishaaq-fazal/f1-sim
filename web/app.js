@@ -93,6 +93,16 @@ async function openStart(mode) {
   $("seedInput").closest("label").hidden = m !== "quick";
   $("historyBox").hidden = m !== "quick" || $("historyList").children.length === 0;
   $("startBtn").hidden = m !== "quick";
+  // Racing a round of a running season or career: team and laps are fixed, so only the
+  // pre-race choices show, weather and starting tyres, right under the round's box.
+  const active = (m === "season" && S.season && !S.season.season.finished) ||
+                 (m === "career" && S.career && !S.career.season_finished);
+  $("teamPicker").closest("fieldset").hidden = active;
+  $("lapsSelect").closest("label").hidden = active;
+  $("weatherLabel").hidden = m !== "quick";          // seasons and careers roll the weather each round
+  $("tyreLegend").textContent = active ? "Your starting tyres for this race" : "Starting tyres";
+  $("forecastBox").hidden = true;
+  if (active) renderForecast(m === "season" ? S.season.season.id : S.career.season_id);
   $("startDialog").showModal();
   redrawOutlines();
 }
@@ -620,7 +630,7 @@ function renderSeasonBox() {
     const next = sz.rounds_done + 1;
     const mine = myTeamStanding();
     text.append(el("b", null, `Season with ${teamName(sz.team)}`),
-      document.createTextNode(` · round ${next} of ${ROUNDS()} at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · ${sz.weather}` +
+      document.createTextNode(` · round ${next} of ${ROUNDS()} at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · random weather` +
         (mine ? ` · teams' championship P${mine.pos} on ${mine.points} pts` : "")));
     const go = el("button", "btn primary", `Start round ${next}`); go.type = "button";
     go.addEventListener("click", () => startSeasonRound(sz.id));
@@ -639,7 +649,7 @@ function renderSeasonBox() {
   } else {
     text.append(el("b", null, "Season mode"),
       document.createTextNode(`: ${ROUNDS()} races, one at every circuit, scored with F1 points (25-18-15-12-10-8-6-4-2-1). ` +
-        "Uses the team, laps and weather you pick below, and you keep that team all season."));
+        "Uses the team and laps you pick below, and you keep that team all season. The weather is random each round."));
     const go = el("button", "btn", "Start a season"); go.type = "button";
     go.addEventListener("click", startSeason);
     buttons.push(go);
@@ -669,13 +679,35 @@ async function startSeason() {
 
 function startSeasonRound(id) {
   const sz = S.season.season;
-  // team, circuit, laps and weather come from the season on the server; this just names it
+  // team, circuit and laps come from the season on the server; weather is rolled per round
   const msg = { type: "start", team: sz.team, laps: sz.laps, season: id };
   if (Object.keys(S.startTyres).length) msg.tyres = { ...S.startTyres };
   connect(() => {
     S.ws.send(JSON.stringify(msg));
     $("startDialog").close();
   });
+}
+
+// Pre-race forecast for the next round of a season, so you can pick starting tyres for it.
+async function renderForecast(seasonId) {
+  const box = $("forecastBox");
+  const r = await api(`/api/seasons/${seasonId}/next`);
+  if (!r.ok) return;
+  const n = await r.json();
+  const f = n.forecast;
+  const head = el("div", "fc-head");
+  head.append(el("b", null, `Round ${n.round} · ${trackName(n.track)} · ${n.laps} laps`),
+    el("span", `fc-summary ${f.wet_start ? "wet" : f.rain_chance >= 45 ? "maybe" : "dry"}`, f.summary));
+  const row = el("div", "fc-row");
+  row.append(el("span", null, `Chance of rain during the race: ${f.rain_chance}%`),
+    el("span", null, `Track ${Math.round(f.track_wetness * 100)}% wet`),
+    el("span", null, "Next 20 min: " + f.next_20_min.map((x) => `${x.in_min}m ${x.chance}%`).join(" · ")));
+  const tip = el("p", "rules", f.wet_start
+    ? "Tip: Intermediates or Wets for a wet start; slicks will be very slow until it dries."
+    : f.rain_chance >= 45 ? "Tip: rain may come, so a tyre that lasts can save a stop before you switch to Inters."
+    : "Tip: a dry race, so plan two different dry compounds or take a 10 s penalty.");
+  box.replaceChildren(head, row, tip);
+  box.hidden = false;
 }
 
 async function openStandings() {
@@ -689,7 +721,7 @@ function renderStandings() {
   const d = S.season, sz = d.season;
   for (const b of $("standingsSeg").children) b.classList.toggle("on", b.dataset.v === S.standingsTab);
   $("standingsLede").textContent = `${teamName(sz.team)} · ${sz.finished ? "season complete" : `after ${sz.rounds_done} of ${ROUNDS()} rounds`}` +
-    ` · ${sz.laps} laps · ${sz.weather}`;
+    ` · ${sz.laps} laps · random weather each round`;
   $("standingsRules").textContent = `Points for P1 to P10: ${d.points_system.join(", ")}. Retirements score nothing. Ties go to the most wins, then most 2nd places.`;
   const nb = $("nextRoundBtn");
   nb.hidden = sz.finished;
@@ -757,14 +789,19 @@ function renderCareerBox() {
     const where = c.season_finished ? "season over" : `round ${c.rounds_done + 1} of ${ROUNDS()} at ${trackName(track8(c.rounds_done + 1))}`;
     text.append(el("b", null, `Career with ${teamName(c.team)}`),
       document.createTextNode(` · season ${c.season_no} · ${where} · budget ${money(c.budget)}`));
-    const hq = el("button", "btn primary", "Team HQ"); hq.type = "button";
+    const hq = el("button", c.ready ? "btn" : "btn primary", "Team HQ"); hq.type = "button";
     hq.addEventListener("click", () => { $("startDialog").close(); openHQ(); });
+    if (c.ready) {
+      const go = el("button", "btn primary", `Start round ${c.rounds_done + 1}`); go.type = "button";
+      go.addEventListener("click", startCareerRound);
+      buttons.push(go);
+    }
     buttons.push(hq);
     const radio = document.querySelector(`input[name="team"][value="${c.team}"]`);
     if (radio) { radio.checked = true; buildTyrePicker(); }
   } else {
     text.append(el("b", null, "Career mode"),
-      document.createTextNode(": season after season with one team. Earn prize money, develop the car between races and sign drivers. Uses the team, laps and weather picked below."));
+      document.createTextNode(": season after season with one team. Earn prize money, develop the car between races and sign drivers. Uses the team and laps picked below; the weather is random each round."));
     const go = el("button", "btn", "Start a career"); go.type = "button";
     go.addEventListener("click", startCareer);
     buttons.push(go);
@@ -816,7 +853,7 @@ function renderHQ() {
   const c = S.career;
   const pre = c.rounds_done === 0 && !c.season_finished;
   $("hqLede").textContent = `${teamName(c.team)} · Season ${c.season_no} · ` +
-    (c.season_finished ? "season complete" : `${c.rounds_done} of ${ROUNDS()} rounds raced`) + ` · ${c.laps} laps · ${c.weather}`;
+    (c.season_finished ? "season complete" : `${c.rounds_done} of ${ROUNDS()} rounds raced`) + ` · ${c.laps} laps · random weather each round`;
   const stat = (label, value) => { const d = el("div", null, label); d.prepend(el("b", null, value)); return d; };
   const wages = c.drivers.reduce((a, d) => a + d.salary, 0);
   $("hqMoney").replaceChildren(stat("Budget", money(c.budget)), stat("Driver wages this season", money(wages)),
@@ -888,12 +925,18 @@ function renderHQ() {
 async function hqGo() {
   const c = S.career;
   if (c.season_finished) return careerPost("next-season");
-  // starting tyres: use the start screen's picker for this team's drivers
+  // go to the pre-race screen to pick this round's weather and starting tyres
+  $("hqDialog").close();
+  openStart("career");
+}
+
+function startCareerRound() {
+  const c = S.career;
   const msg = { type: "start", team: c.team, laps: c.laps, season: c.season_id };
   const own = new Set(c.drivers.map((d) => d.code));
   const tyres = Object.fromEntries(Object.entries(S.startTyres).filter(([k]) => own.has(k)));
   if (Object.keys(tyres).length) msg.tyres = tyres;
-  connect(() => { S.ws.send(JSON.stringify(msg)); $("hqDialog").close(); });
+  connect(() => { S.ws.send(JSON.stringify(msg)); $("startDialog").close(); });
 }
 
 // ---------------------------------------------------------------- lap chart

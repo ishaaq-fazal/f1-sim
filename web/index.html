@@ -132,8 +132,9 @@
         <legend>Team</legend>
         <div class="teams" id="teamPicker"></div>
       </fieldset>
+      <section class="forecast" id="forecastBox" aria-label="Weather forecast" hidden></section>
       <fieldset>
-        <legend>Starting tyres</legend>
+        <legend id="tyreLegend">Starting tyres</legend>
         <div class="start-tyres" id="tyrePicker"></div>
       </fieldset>
       <div class="row">
@@ -145,7 +146,7 @@
             <option value="66">66 (full)</option>
           </select>
         </label>
-        <label>Weather
+        <label id="weatherLabel">Weather
           <select id="weatherSelect">
             <option value="dry" selected>Dry</option>
             <option value="changeable">Changeable (rain may come and go)</option>

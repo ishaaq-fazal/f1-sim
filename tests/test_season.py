@@ -191,3 +191,54 @@ def test_ws_refuses_a_finished_season(alice):
     with alice.websocket_connect("/ws/race", headers=ORIGIN) as ws:
         ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "season": sid}))
         assert ws.receive_json()["detail"] == "That season is over"
+
+
+# ---------------------------------------------------------------- random weather each round
+def test_round_weather_is_random_but_fixed_by_the_seed():
+    from collections import Counter
+    from sim.season import round_weather
+    counts = Counter(round_weather(s) for s in range(2000))
+    assert set(counts) == {"dry", "changeable", "wet"} and counts["dry"] > counts["changeable"] > counts["wet"]
+    assert all(round_weather(s) == round_weather(s) for s in range(50))
+
+
+def test_forecast_matches_the_weather_the_race_actually_gets():
+    from sim.season import round_forecast, round_weather
+    for seed in range(40):
+        f = round_forecast(seed, "harbourline", 20)
+        e = RaceEngine(RaceConfig(laps=20, seed=seed, track_id="harbourline", weather=round_weather(seed)))
+        assert e.weather.mode == round_weather(seed)
+        assert f["track_wetness"] == round(e.weather.wetness, 2)
+        assert f["wet_start"] == (e.weather.wetness > 0.3)
+        if f["wet_start"]:
+            assert all(c.tyre in ("I", "W") for c in e.cars)
+
+
+def test_next_round_endpoint_gives_the_circuit_and_forecast(alice, bob):
+    sid = new_season(alice, laps=12)["id"]
+    r = alice.get(f"/api/seasons/{sid}/next")
+    assert r.status_code == 200
+    n = r.json()
+    assert n["round"] == 1 and n["track"] == track_for_round(1) and n["laps"] == 12
+    assert 0 <= n["forecast"]["rain_chance"] <= 100 and len(n["forecast"]["next_20_min"]) == 4
+    assert alice.get(f"/api/seasons/{sid}/next").json() == n               # same forecast every time
+    assert bob.get(f"/api/seasons/{sid}/next").status_code == 404          # not yours
+    for _ in range(ROUNDS):
+        finish_round("alice@example.com", sid)
+    assert alice.get(f"/api/seasons/{sid}/next").status_code == 400        # season over
+
+
+def test_ws_season_round_uses_the_rolled_weather_not_the_players(alice):
+    from sim.season import round_weather
+    sid = new_season(alice)["id"]
+    expected_seed = repo.round_seed(sid, 1)
+    for attempt in range(2):                     # quitting and restarting can't re-roll the weather
+        with alice.websocket_connect("/ws/race", headers=ORIGIN) as ws:
+            ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "season": sid,
+                                     "weather": "wet" if round_weather(expected_seed) != "wet" else "dry",
+                                     "tyres": {"MAR": "H"}}))
+            init = ws.receive_json()
+            state = ws.receive_json()
+            assert init["seed"] == expected_seed
+            assert state["weather"]["mode"] == round_weather(expected_seed)
+            assert next(c for c in state["cars"] if c["code"] == "MAR")["tyre"] == "H"   # your tyre pick stands

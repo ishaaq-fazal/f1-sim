@@ -13,6 +13,7 @@
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* some boxes use display:flex, which would beat the attribute */
 html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 var(--font); }
 button, select, input { font: inherit; color: inherit; }
 h1, h2 { margin: 0; }
@@ -215,3 +216,13 @@ dialog.menu { width: min(860px, calc(100vw - 32px)); padding: 32px; border-top: 
 .tour-card h3 { margin: 2px 0 6px; font-size: 16px; }
 .tour-card p { margin: 0 0 6px; font-size: 13px; line-height: 1.5; }
 .tour-step { color: var(--yellow); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* ---------------------------------------------------------------- pre-race forecast */
+.forecast { border: 1px solid var(--line); border-left: 3px solid #2f8cff; border-radius: 10px; padding: 10px 14px; margin: 0 0 12px; }
+.forecast .fc-head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+.forecast .fc-summary { font-weight: 700; }
+.forecast .fc-summary.dry { color: var(--yellow); }
+.forecast .fc-summary.maybe { color: #6fb3ff; }
+.forecast .fc-summary.wet { color: #2f8cff; }
+.forecast .fc-row { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
+.forecast .rules { margin: 6px 0 0; }

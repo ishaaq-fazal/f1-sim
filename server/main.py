@@ -21,7 +21,7 @@ from sqlmodel import Session
 
 from sim import TEAMS, RaceConfig, RaceEngine, default_grid
 from sim import career as career_rules
-from sim.season import ROUNDS, SCHEDULE, track_for_round
+from sim.season import ROUNDS, SCHEDULE, round_weather, track_for_round
 from sim.track import TRACK_SPECS, get_track
 from sim.tyres import COMPOUNDS
 
@@ -182,10 +182,12 @@ class RaceSession:
                     return await self._error("That season is over")
                 if self.user.role not in (Role.principal, Role.admin):
                     return await self._error("Viewers can't run a season")
-                # The season decides team, circuit, laps and weather; only starting tyres are your call.
+                # The season decides team, circuit and laps; each round's weather is random but fixed
+                # in advance (shown as a forecast). Starting tyres are the player's call.
                 round_no = season.rounds_done + 1
+                seed = repo.round_seed(season.id, round_no)
                 cmd = cmd.model_copy(update={"team": season.team, "track": track_for_round(round_no),
-                                             "laps": season.laps, "weather": season.weather, "seed": None})
+                                             "laps": season.laps, "weather": round_weather(seed), "seed": seed})
                 self.season_round = (season.id, round_no)
                 if career is not None:
                     try:

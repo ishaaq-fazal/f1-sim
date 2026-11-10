@@ -206,6 +206,26 @@ class TeamStandingOut(BaseModel):
     wins: int
 
 
+class ForecastSlotOut(BaseModel):
+    in_min: int
+    chance: int
+
+
+class ForecastOut(BaseModel):
+    summary: str
+    rain_chance: int
+    wet_start: bool
+    track_wetness: float
+    next_20_min: list[ForecastSlotOut]
+
+
+class NextRoundOut(BaseModel):
+    round: int
+    track: str
+    laps: int
+    forecast: ForecastOut
+
+
 class SeasonDetailOut(BaseModel):
     season: SeasonOut
     points_system: list[int]

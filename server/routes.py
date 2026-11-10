@@ -12,9 +12,9 @@ from .config import settings
 from .db import Role, User, get_session
 from sim import TEAMS, default_grid
 from sim import career as career_rules
-from sim.season import POINTS, SCHEDULE, standings
+from sim.season import POINTS, SCHEDULE, round_forecast, standings, track_for_round
 
-from .schemas import (CareerIn, CareerOut, ContractOut, DriverStandingOut, RenewIn, SignIn, UpgradeIn, UpgradeOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
+from .schemas import (NextRoundOut, CareerIn, CareerOut, ContractOut, DriverStandingOut, RenewIn, SignIn, UpgradeIn, UpgradeOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
                       SignupIn, TeamStandingOut, UserOut)
 from .security import LoginLockout, SlidingWindow
 
@@ -140,6 +140,20 @@ def my_season(season_id: int, user: User = Depends(current_user), s: Session = D
                  for i, d in enumerate(drivers, 1)],
         teams=[TeamStandingOut(pos=i, team=t.key, name=_TEAM_NAMES.get(t.key, t.key), points=t.points, wins=t.wins)
                for i, t in enumerate(teams, 1)])
+
+
+@router.get("/seasons/{season_id}/next", response_model=NextRoundOut)
+def next_round(season_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    """The next round's circuit and weather forecast, so starting tyres can be chosen for it."""
+    season = repo.get_season(s, user, season_id)
+    if season is None:
+        raise HTTPException(404, "Not found")
+    if season.finished:
+        raise HTTPException(400, "That season is over")
+    n = season.rounds_done + 1
+    track = track_for_round(n)
+    return NextRoundOut(round=n, track=track, laps=season.laps,
+                        forecast=round_forecast(repo.round_seed(season.id, n), track, season.laps))
 
 
 @router.delete("/seasons/{season_id}", status_code=204)

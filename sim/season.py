@@ -4,6 +4,7 @@ Pure Python (no web or database code), so the rules can be tested on their own.
 """
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 
 # One round at each circuit, ordered so street, fast and high-wear tracks are mixed through the year.
@@ -65,3 +66,46 @@ def standings(rows) -> tuple[list[Standing], list[Standing]]:
             t.finishes.append(r.position)
     return (sorted(drivers.values(), key=Standing.sort_key),
             sorted(teams.values(), key=Standing.sort_key))
+
+
+# ---------------------------------------------------------------- weather for each round
+# Each round's weather is rolled from the round's seed, so it is fixed before the race (the
+# forecast and the race always agree) but nobody can choose it.
+WEATHER_ODDS = (("dry", 0.6), ("changeable", 0.3), ("wet", 0.1))
+
+
+def round_weather(seed: int) -> str:
+    r = random.Random(seed ^ 0x5EA5_0E).random()
+    for mode, p in WEATHER_ODDS:
+        if r < p:
+            return mode
+        r -= p
+    return WEATHER_ODDS[-1][0]
+
+
+def round_forecast(seed: int, track_id: str, laps: int) -> dict:
+    """The pre-race forecast for a round, built from the same weather the race will use."""
+    from .track import get_track
+    from .weather import Weather
+
+    mode = round_weather(seed)
+    track = get_track(track_id)
+    race_s = laps * track.base_lap_s * 1.05
+    # Same random draws as RaceEngine.__init__, so this is exactly the race's weather.
+    w = Weather(mode, random.Random(random.Random(seed).random()), race_s)
+    fuzz = random.Random(seed ^ 0xF0_CA57)
+    wet_start = w.wetness > 0.3
+    in_race = [sp for sp in w.spells if sp.end > 0 and sp.start < race_s]
+    if wet_start:
+        chance, summary = 100, "Raining at the start: wet track"
+    elif in_race:
+        sp = min(in_race, key=lambda s: s.start)
+        chance = int(min(95, max(45, 72 + fuzz.gauss(0, 10))))
+        lap = max(1, round(sp.start / track.base_lap_s))
+        lo, hi = max(1, lap - fuzz.randint(2, 4)), min(laps, lap + fuzz.randint(2, 4))
+        summary = f"Dry start, rain likely around laps {lo}-{hi}"
+    else:
+        chance = int(max(0, min(30, 8 + fuzz.gauss(0, 6))))
+        summary = "Dry and settled"
+    return {"summary": summary, "rain_chance": chance, "wet_start": wet_start,
+            "track_wetness": round(w.wetness, 2), "next_20_min": w.forecast(0.0)}

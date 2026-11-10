@@ -26,6 +26,8 @@ The race engine is Python; the browser draws it.
 * **Season mode**: a 10-race championship, one round at every circuit, with the same team all
   season. Every car scores F1 points (25-18-15-12-10-8-6-4-2-1 for the top 10), and the
   leaderboard shows drivers' and teams' standings plus the calendar with each round's winner.
+  Each round's weather is random (dry 60%, changeable 30%, wet 10%) and fixed in advance, so
+  it can't be re-rolled. The pre-race screen shows the forecast and you pick your starting tyres.
   Seasons are saved to your account; only you can see or delete them.
 * **Career mode**: season after season with one team. Win prize money after every round and a
   bigger payout by constructors' position at the end of each season, spend it on four areas of
@@ -77,7 +79,7 @@ Forgot a password? `python -m server.cli reset-password you@example.com`
 ## Checks
 
 ```bash
-pytest -q                          # 154 tests: engine, circuits, weather, seasons, career, login, security
+pytest -q                          # 158 tests: engine, circuits, weather, seasons, career, login, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 
