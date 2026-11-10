@@ -38,6 +38,9 @@ class RaceConfig:
     vsc_chance_per_lap: float = 0.025
     dnf_chance_per_lap: float = 0.0008
     mistake_chance_per_lap: float = 0.012
+    # Career mode: per-team multipliers from car upgrades (1.0 = no change).
+    team_wear: dict[str, float] | None = None   # tyre wear rate
+    team_dnf: dict[str, float] | None = None    # chance of a mechanical retirement
 
 
 @dataclass
@@ -283,7 +286,8 @@ class RaceEngine:
         car.tyre_age += 1
         _, wear_mult = PACE_MODES[car.mode]
         car.wear += (wear_mult * self.track.wear_mult * (0.4 if self.vsc else 1.0)
-                     * wear_factor(car.tyre, self.weather.wetness))
+                     * wear_factor(car.tyre, self.weather.wetness)
+                     * (self.cfg.team_wear or {}).get(car.driver.team, 1.0))
         car.fuel = max(0.0, car.fuel - FUEL_PER_LAP_KG)
         record = {"code": car.code, "lap": car.lap, "time": round(lap_time, 3), "tyre": car.tyre,
                   "age": car.tyre_age, "pit": car.pit_this_lap, "sectors": [round(s or 0, 3) for s in car.sectors]}
@@ -309,7 +313,7 @@ class RaceEngine:
                 self._event("penalty", f"{car.code} +10s: only one compound used", car.code)
             return
 
-        if self.rng.random() < self.cfg.dnf_chance_per_lap:
+        if self.rng.random() < self.cfg.dnf_chance_per_lap * (self.cfg.team_dnf or {}).get(car.driver.team, 1.0):
             car.retired = True
             self._event("dnf", f"{car.code} retires with a power unit failure", car.code)
             return

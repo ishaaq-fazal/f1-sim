@@ -1,6 +1,5 @@
 # Pit Wall: F1 strategy simulator
 
-
 **Live: https://f1-sim-2.onrender.com**
 
 Watch a race and run one team's strategy: pick the circuit and your starting tyres, then call
@@ -20,6 +19,12 @@ The race engine is Python; the browser draws it.
   season. Every car scores F1 points (25-18-15-12-10-8-6-4-2-1 for the top 10), and the
   leaderboard shows drivers' and teams' standings plus the calendar with each round's winner.
   Seasons are saved to your account; only you can see or delete them.
+* **Career mode**: season after season with one team. Win prize money after every round and a
+  bigger payout by constructors' position at the end of each season, spend it on four areas of
+  car development between races (power unit, aerodynamics, suspension/tyre wear, reliability),
+  and manage two driver contracts: renew them when they run out or sign someone from the driver
+  market before a season starts. Rival teams develop every off-season, so standing still means
+  falling back.
 * **Weather**: dry, wet or changeable races. Rain comes and goes, the track soaks and dries out
   over time, and a forecast shows the chance of rain. Intermediates and Wets are quick in the wet
   but overheat on a drying track; AI teams switch tyres when the gain pays for the stop. Using a
@@ -39,6 +44,7 @@ sim/        pure-Python race engine (no web code)
   engine.py     the race: lap times, fuel, traffic, overtakes, pit stops, VSC, DNFs, starting tyres
   grid.py       default (made-up) teams and drivers
   season.py     season calendar, F1 points and championship standings
+  career.py     career mode: budget, car upgrades, driver contracts, rival development
 server/     FastAPI app: serves web/, streams the race over a WebSocket, accounts + database
   repo.py       the only code that touches the database (every query scoped to its owner)
   cli.py        admin commands: list-users, reset-password
@@ -62,7 +68,7 @@ Forgot a password? `python -m server.cli reset-password you@example.com`
 ## Checks
 
 ```bash
-pytest -q                          # 106 tests: engine, circuits, weather, seasons, accounts, security
+pytest -q                          # 146 tests: engine, circuits, weather, seasons, career, login, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 

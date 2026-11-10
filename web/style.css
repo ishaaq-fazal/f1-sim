@@ -179,3 +179,15 @@ input[type=email], input[type=password] { background: var(--panel-2); border: 1p
 .standings .pts { font-weight: 700; }
 .standings tr.next td { color: var(--text); font-weight: 700; }
 .standings tr.todo td { color: var(--muted); }
+
+/* ---------------------------------------------------------------- career */
+#hqDialog { width: min(840px, calc(100vw - 32px)); }
+.hq-h { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+.hq-money { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: var(--muted); }
+.hq-money b { color: var(--text); font-size: 18px; display: block; }
+.hq td { vertical-align: middle; }
+.hq .lvl { letter-spacing: 2px; color: var(--text); }
+.hq .btn { padding: 4px 10px; font-size: 12px; }
+.hq select { font-size: 12px; }
+.hq tr.expired td { color: #ff6b6b; }
+.season-box .btn.danger, #hqQuitBtn { color: #ff6b6b; }

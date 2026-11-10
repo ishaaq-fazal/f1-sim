@@ -260,3 +260,26 @@ def test_old_databases_get_the_track_column(tmp_path):
     assert "track" in {col["name"] for col in inspect(old).get_columns("racerecord")}
     with old.connect() as c:
         assert c.execute(text("SELECT track FROM racerecord")).scalar() == "harbourline"
+
+
+
+def test_old_season_tables_get_the_career_column(tmp_path):
+    """Seasons saved before career mode existed are kept and gain a career_id column."""
+    from sqlalchemy import create_engine, inspect, text
+
+    import server.db as db
+    old = create_engine(f"sqlite:///{tmp_path}/old2.db")
+    with old.begin() as c:
+        c.execute(text("CREATE TABLE racerecord (id INTEGER PRIMARY KEY, track VARCHAR)"))
+        c.execute(text("CREATE TABLE career (id INTEGER PRIMARY KEY)"))
+        c.execute(text("CREATE TABLE season (id INTEGER PRIMARY KEY, owner_id INTEGER, team VARCHAR, laps INTEGER)"))
+        c.execute(text("INSERT INTO season (owner_id, team, laps) VALUES (1, 'aurora', 10)"))
+    real = db.engine
+    try:
+        db.engine = old
+        db._upgrade()
+    finally:
+        db.engine = real
+    assert "career_id" in {col["name"] for col in inspect(old).get_columns("season")}
+    with old.connect() as c:
+        assert c.execute(text("SELECT team, career_id FROM season")).one() == ("aurora", None)

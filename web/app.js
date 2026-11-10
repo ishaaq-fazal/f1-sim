@@ -77,8 +77,9 @@ async function submitAuth(kind) {
 
 async function openStart() {
   if (!S.user) { $("authDialog").showModal(); return; }
-  await Promise.all([loadHistory(), loadSeason()]);
+  await Promise.all([loadHistory(), loadSeason(), loadCareer()]);
   renderSeasonBox();
+  renderCareerBox();
   $("startDialog").showModal();
   redrawOutlines();
 }
@@ -150,7 +151,19 @@ async function init() {
   });
   $("newRaceBtn").addEventListener("click", openStart);
   $("startForm").addEventListener("submit", (e) => { e.preventDefault(); startRace(); });
-  $("againBtn").addEventListener("click", () => setTimeout(openStart, 0));
+  $("againBtn").addEventListener("click", () => setTimeout(() => {
+    if (S.seasonRace && S.seasonRace.career) openHQ(); else openStart();
+  }, 0));
+  $("hqBtn").addEventListener("click", openHQ);
+  $("hqGoBtn").addEventListener("click", hqGo);
+  $("hqStandingsBtn").addEventListener("click", async () => {
+    await loadSeason(S.career.season_id); $("hqDialog").close(); openStandings();
+  });
+  $("hqQuitBtn").addEventListener("click", async () => {
+    if (!confirm("Abandon this career? All its seasons will be deleted.")) return;
+    await api(`/api/careers/${S.career.id}`, { method: "DELETE" });
+    S.career = null; $("hqBtn").hidden = true; $("hqDialog").close(); openStart();
+  });
   $("standingsBtn").addEventListener("click", openStandings);
   $("resultStandingsBtn").addEventListener("click", () => { $("resultDialog").close(); openStandings(); });
   $("nextRoundBtn").addEventListener("click", () => { $("standingsDialog").close(); openStart(); });
@@ -226,8 +239,9 @@ S.startTyres = {};
 function buildTyrePicker() {
   const teamId = document.querySelector('input[name="team"]:checked').value;
   const team = S.setup.teams.find((t) => t.id === teamId);
+  const drivers = S.career && S.career.team === teamId ? S.career.drivers : team.drivers;
   S.startTyres = {};
-  $("tyrePicker").replaceChildren(...team.drivers.map((d) => {
+  $("tyrePicker").replaceChildren(...drivers.map((d) => {
     const row = el("div", "tyre-row");
     row.append(el("span", "who", `${d.name} (${d.code})`));
     const auto = el("button", "boxbtn on", "Auto"); auto.type = "button";
@@ -260,7 +274,9 @@ function startRace() {
   const laps = Number($("lapsSelect").value);
   const seedRaw = $("seedInput").value.trim();
   const msg = { type: "start", team, laps, track: selectedTrack(), weather: $("weatherSelect").value };
-  if (Object.keys(S.startTyres).length) msg.tyres = { ...S.startTyres };
+  const own = new Set(S.setup.teams.find((t) => t.id === team).drivers.map((d) => d.code));
+  const tyres = Object.fromEntries(Object.entries(S.startTyres).filter(([c]) => own.has(c)));
+  if (Object.keys(tyres).length) msg.tyres = tyres;
   if (seedRaw !== "") msg.seed = Number(seedRaw);
   connect(() => {
     S.ws.send(JSON.stringify(msg));
@@ -502,13 +518,15 @@ async function showResults(st) {
   $("resultLede").textContent = `Your team: ${mine}. Winner: ${st.cars[0].name}.`;
   const season = S.seasonRace;
   $("resultStandingsBtn").hidden = !season;
-  $("againBtn").textContent = season && season.round < season.rounds ? "Next round" : "New race";
+  $("againBtn").textContent = season && season.career ? "Team HQ"
+    : season && season.round < season.rounds ? "Next round" : "New race";
   if (season) {
     const pts = st.cars.filter((c) => c.controlled).reduce((a, c) => a + racePoints(c), 0);
     await loadSeason(season.id);
     const mineTeam = S.season && S.season.teams.find((t) => t.team === S.season.season.team);
     $("resultLede").textContent += ` Round ${season.round} of ${season.rounds}: your team scored ${pts} point${pts === 1 ? "" : "s"}` +
-      (mineTeam ? ` and is P${mineTeam.pos} in the teams' championship on ${mineTeam.points}.` : ".");
+      (mineTeam ? ` and is P${mineTeam.pos} in the teams' championship on ${mineTeam.points}.` : ".") +
+      (season.career ? ` Prize money: $${(1 + 0.4 * pts).toFixed(1)}M.` : "");
   }
   body.replaceChildren(...st.cars.map((c) => {
     const tr = el("tr"); if (c.controlled) tr.classList.add("mine");
@@ -670,6 +688,170 @@ function renderStandings() {
     const tr = el("tr"); const td = el("td", null, "No rounds raced yet."); td.colSpan = 7; tr.append(td); rows = [tr];
   }
   $("standingsBody").replaceChildren(...rows);
+}
+
+// ---------------------------------------------------------------- career
+const money = (m) => `$${Number(m).toFixed(1)}M`;
+
+async function loadCareer(id) {
+  if (id === undefined) {
+    const r = await api("/api/careers");
+    const list = r.ok ? await r.json() : [];
+    S.career = list[0] || null;
+  } else {
+    const r = await api(`/api/careers/${id}`);
+    S.career = r.ok ? await r.json() : null;
+  }
+  $("hqBtn").hidden = !S.career;
+  return S.career;
+}
+
+function renderCareerBox() {
+  const box = $("careerBox");
+  const c = S.career;
+  const text = el("div", "stext");
+  const buttons = [];
+  if (c) {
+    const where = c.season_finished ? "season over" : `round ${c.rounds_done + 1} of 8 at ${trackName(track8(c.rounds_done + 1))}`;
+    text.append(el("b", null, `Career with ${teamName(c.team)}`),
+      document.createTextNode(` · season ${c.season_no} · ${where} · budget ${money(c.budget)}`));
+    const hq = el("button", "btn primary", "Team HQ"); hq.type = "button";
+    hq.addEventListener("click", () => { $("startDialog").close(); openHQ(); });
+    buttons.push(hq);
+    const radio = document.querySelector(`input[name="team"][value="${c.team}"]`);
+    if (radio) { radio.checked = true; buildTyrePicker(); }
+  } else {
+    text.append(el("b", null, "Career mode"),
+      document.createTextNode(": season after season with one team. Earn prize money, develop the car between races and sign drivers. Uses the team, laps and weather picked below."));
+    const go = el("button", "btn", "Start a career"); go.type = "button";
+    go.addEventListener("click", startCareer);
+    buttons.push(go);
+  }
+  box.replaceChildren(text, ...buttons);
+}
+
+const TRACK_ORDER = ["harbourline", "monteverde", "sandridge", "alderwood"];
+const track8 = (round) => TRACK_ORDER[(round - 1) % 4];
+
+async function startCareer() {
+  const team = document.querySelector('input[name="team"]:checked').value;
+  const body = { team, laps: Number($("lapsSelect").value), weather: $("weatherSelect").value };
+  const r = await api("/api/careers", { method: "POST", body });
+  if (!r.ok) {
+    let msg = "Could not start a career.";
+    try { const d = (await r.json()).detail; if (typeof d === "string") msg = d; } catch (_) { /* keep */ }
+    $("startError").textContent = msg;
+    return;
+  }
+  S.career = await r.json();
+  $("hqBtn").hidden = false;
+  $("startDialog").close();
+  openHQ();
+}
+
+async function openHQ() {
+  if (!S.career) await loadCareer(); else await loadCareer(S.career.id);
+  if (!S.career) return openStart();
+  $("hqError").textContent = "";
+  renderHQ();
+  if (!$("hqDialog").open) $("hqDialog").showModal();
+}
+
+async function careerPost(path, body) {
+  const r = await api(`/api/careers/${S.career.id}/${path}`, { method: "POST", body });
+  let data = null;
+  try { data = await r.json(); } catch (_) { /* empty */ }
+  if (!r.ok) {
+    $("hqError").textContent = data && typeof data.detail === "string" ? data.detail : "That didn't work.";
+    return;
+  }
+  $("hqError").textContent = "";
+  S.career = data;
+  renderHQ();
+}
+
+function renderHQ() {
+  const c = S.career;
+  const pre = c.rounds_done === 0 && !c.season_finished;
+  $("hqLede").textContent = `${teamName(c.team)} · Season ${c.season_no} · ` +
+    (c.season_finished ? "season complete" : `${c.rounds_done} of 8 rounds raced`) + ` · ${c.laps} laps · ${c.weather}`;
+  const stat = (label, value) => { const d = el("div", null, label); d.prepend(el("b", null, value)); return d; };
+  const wages = c.drivers.reduce((a, d) => a + d.salary, 0);
+  $("hqMoney").replaceChildren(stat("Budget", money(c.budget)), stat("Driver wages this season", money(wages)),
+    stat("Prize money won", money(c.income)), stat("Spent on the car", money(c.spent.upgrades || 0)));
+
+  $("hqUpgrades").replaceChildren(...c.upgrades.map((u) => {
+    const tr = el("tr");
+    const btn = el("button", "btn", u.next_cost == null ? "Maxed" : `Upgrade · ${money(u.next_cost)}`); btn.type = "button";
+    btn.disabled = u.next_cost == null || u.next_cost > c.budget || c.season_finished;
+    btn.addEventListener("click", () => careerPost("upgrade", { area: u.area }));
+    tr.append(el("td", null, u.label), el("td", "lvl", `Lv ${u.level}`), el("td", "r", null));
+    tr.lastChild.append(btn);
+    return tr;
+  }));
+
+  $("hqDrivers").replaceChildren(...c.drivers.map((d) => {
+    const tr = el("tr"); if (d.years <= 0) tr.classList.add("expired");
+    const cell = el("td", "r");
+    if (d.years <= 0 && pre) {
+      for (const y of [1, 2, 3]) {
+        const b = el("button", "btn", `Renew ${y}y`); b.type = "button";
+        b.addEventListener("click", () => careerPost("renew", { code: d.code, years: y }));
+        cell.append(b);
+      }
+    }
+    tr.append(el("td", null, `${d.name} (${d.code})`), el("td", null, `Rating ${d.rating}`),
+      el("td", null, `${money(d.salary)} a season`),
+      el("td", null, d.years > 0 ? `${d.years} season${d.years === 1 ? "" : "s"} left` : "Contract over"), cell);
+    return tr;
+  }));
+
+  $("hqMarketHint").textContent = pre ? "· sign before round 1; buying out a contract costs half its remaining wages"
+    : "· opens again before the next season";
+  $("hqMarket").replaceChildren(...c.market.map((m) => {
+    const tr = el("tr");
+    const cell = el("td", "r");
+    if (pre) {
+      const years = el("select");
+      for (const y of [1, 2, 3]) { const o = el("option", null, `${y} season${y === 1 ? "" : "s"}`); o.value = y; years.append(o); }
+      years.value = "2";
+      cell.append(years);
+      for (const seat of c.drivers) {
+        const b = el("button", "btn", `Replace ${seat.code}`); b.type = "button";
+        b.addEventListener("click", () => careerPost("sign", { code: m.code, replace: seat.code, years: Number(years.value) }));
+        cell.append(b);
+      }
+    }
+    tr.append(el("td", null, `${m.name} (${m.code})`), el("td", null, `Rating ${m.rating}`),
+      el("td", null, `${money(m.salary)} a season`), cell);
+    return tr;
+  }));
+
+  $("hqHistoryBox").hidden = c.history.length === 0;
+  $("hqHistory").replaceChildren(...c.history.map((h) => {
+    const tr = el("tr");
+    tr.append(el("td", null, `Season ${h.season}`), el("td", null, `Teams' P${h.team_position}`),
+      el("td", null, `${h.points} pts`), el("td", null, `Champion ${h.champion}`),
+      el("td", "r", `+${money(h.prize)} prize, −${money(h.salaries)} wages`));
+    return tr;
+  }));
+
+  const go = $("hqGoBtn");
+  go.disabled = false;
+  if (c.season_finished) go.textContent = `Start season ${c.season_no + 1}`;
+  else go.textContent = `Start round ${c.rounds_done + 1} · ${trackName(track8(c.rounds_done + 1))}`;
+  if (!c.ready && !c.season_finished) { go.disabled = true; $("hqError").textContent = c.blocker; }
+}
+
+async function hqGo() {
+  const c = S.career;
+  if (c.season_finished) return careerPost("next-season");
+  // starting tyres: use the start screen's picker for this team's drivers
+  const msg = { type: "start", team: c.team, laps: c.laps, season: c.season_id };
+  const own = new Set(c.drivers.map((d) => d.code));
+  const tyres = Object.fromEntries(Object.entries(S.startTyres).filter(([k]) => own.has(k)));
+  if (Object.keys(tyres).length) msg.tyres = tyres;
+  connect(() => { S.ws.send(JSON.stringify(msg)); $("hqDialog").close(); });
 }
 
 // ---------------------------------------------------------------- lap chart

@@ -211,3 +211,70 @@ class SeasonDetailOut(BaseModel):
     rounds: list[RoundOut]
     drivers: list[DriverStandingOut]
     teams: list[TeamStandingOut]
+
+
+# ------------------------------------------------------------------ careers
+class CareerIn(_In):
+    team: TeamId
+    laps: int = Field(ge=5, le=70)
+    weather: Literal["dry", "wet", "changeable"] = "dry"
+
+
+class UpgradeIn(_In):
+    area: Literal["power", "aero", "tyres", "reliability"]
+
+
+class SignIn(_In):
+    code: DriverCode
+    replace: DriverCode
+    years: int = Field(ge=1, le=3)
+
+
+class RenewIn(_In):
+    code: DriverCode
+    years: int = Field(ge=1, le=3)
+
+
+class ContractOut(BaseModel):
+    code: str
+    name: str
+    rating: int
+    salary: float
+    years: int
+
+
+class UpgradeOut(BaseModel):
+    area: str
+    label: str
+    level: int
+    next_cost: float | None
+
+
+class CareerSeasonOut(BaseModel):
+    season: int
+    team_position: int
+    points: int
+    champion: str
+    prize: float
+    salaries: float
+
+
+class CareerOut(BaseModel):
+    id: int
+    team: str
+    laps: int
+    weather: str
+    season_no: int
+    season_id: int
+    rounds_done: int
+    season_finished: bool
+    budget: float
+    income: float
+    spent: dict[str, float]
+    upgrades: list[UpgradeOut]
+    drivers: list[ContractOut]
+    market: list[ContractOut]
+    history: list[CareerSeasonOut]
+    ready: bool
+    blocker: str | None
+    created_at: datetime

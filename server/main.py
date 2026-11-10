@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from sim import TEAMS, RaceConfig, RaceEngine, default_grid
+from sim import career as career_rules
 from sim.season import ROUNDS, track_for_round
 from sim.track import TRACK_SPECS, get_track
 from sim.tyres import COMPOUNDS
@@ -131,6 +132,7 @@ class RaceSession:
         self.limiter = SlidingWindow(settings.ws_msgs_per_sec, 1.0)
         self.pred_cache: dict[str, tuple[tuple, dict | None]] = {}
         self.season_round: tuple[int, int] | None = None     # (season id, round) while racing a season
+        self.career: dict | None = None                        # career setup for this race, if any
 
     async def run(self) -> None:
         receiver = asyncio.create_task(self._receive())
@@ -165,8 +167,14 @@ class RaceSession:
     async def _handle(self, cmd) -> None:
         if isinstance(cmd, StartCmd):
             if cmd.season is not None:
+                career = None
                 with Session(db_engine) as s:
                     season = repo.get_season(s, self.user, cmd.season)   # owner-scoped
+                    if season is not None and season.career_id is not None:
+                        career = repo.get_career(s, self.user, season.career_id)
+                        current = repo.career_season(s, self.user, career) if career else None
+                        if career is None or current is None or current.id != season.id:
+                            season = None                                 # only the career's current season
                 if season is None:
                     return await self._error("Season not found")
                 if season.finished:
@@ -178,13 +186,26 @@ class RaceSession:
                 cmd = cmd.model_copy(update={"team": season.team, "track": track_for_round(round_no),
                                              "laps": season.laps, "weather": season.weather, "seed": None})
                 self.season_round = (season.id, round_no)
+                if career is not None:
+                    try:
+                        career_rules.ready_to_race(career.state)
+                    except career_rules.CareerError as e:
+                        return await self._error(str(e))
+                    self.career = {"id": career.id, "season_no": career.state["season_no"],
+                                   "drivers": career_rules.race_grid(career.state),
+                                   "wear": career_rules.team_wear(career.state),
+                                   "dnf": career_rules.team_dnf(career.state)}
+                else:
+                    self.career = None
             else:
                 self.season_round = None
+                self.career = None
             if cmd.team not in TEAM_IDS:
                 return await self._error("Unknown team")
             if cmd.track not in TRACK_SPECS:
                 return await self._error("Unknown track")
-            team_codes = {d.code for d in default_grid() if d.team == cmd.team}
+            grid = self.career["drivers"] if self.career else default_grid()
+            team_codes = {d.code for d in grid if d.team == cmd.team}
             if cmd.tyres and not set(cmd.tyres) <= team_codes:
                 return await self._error("Starting tyres can only be set for your own drivers")
             self.team = cmd.team
@@ -192,7 +213,10 @@ class RaceSession:
             self.seed = cmd.seed if cmd.seed is not None else secrets.randbelow(2**31)
             self.engine = RaceEngine(RaceConfig(laps=cmd.laps, seed=self.seed, controlled_team=cmd.team,
                                                 track_id=cmd.track, start_tyres=dict(cmd.tyres or {}),
-                                                weather=cmd.weather))
+                                                weather=cmd.weather,
+                                                team_wear=self.career["wear"] if self.career else None,
+                                                team_dnf=self.career["dnf"] if self.career else None),
+                                     drivers=grid)
             self.paused, self.pred_cache, self.saved = False, {}, False
             await self._send_init()
         elif self.engine is None:
@@ -267,7 +291,10 @@ class RaceSession:
     def _season_json(self) -> dict | None:
         if not self.season_round:
             return None
-        return {"id": self.season_round[0], "round": self.season_round[1], "rounds": ROUNDS}
+        out = {"id": self.season_round[0], "round": self.season_round[1], "rounds": ROUNDS}
+        if self.career:
+            out["career"] = {"id": self.career["id"], "season_no": self.career["season_no"]}
+        return out
 
     async def _error(self, detail: str) -> None:
         await self.ws.send_text(json.dumps({"type": "error", "detail": detail}))

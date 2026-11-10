@@ -11,9 +11,10 @@ from .auth import (REFRESH_COOKIE, clear_auth_cookies, current_user, hash_passwo
 from .config import settings
 from .db import Role, User, get_session
 from sim import TEAMS, default_grid
+from sim import career as career_rules
 from sim.season import POINTS, SCHEDULE, standings
 
-from .schemas import (DriverStandingOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
+from .schemas import (CareerIn, CareerOut, ContractOut, DriverStandingOut, RenewIn, SignIn, UpgradeIn, UpgradeOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
                       SignupIn, TeamStandingOut, UserOut)
 from .security import LoginLockout, SlidingWindow
 
@@ -144,6 +145,95 @@ def my_season(season_id: int, user: User = Depends(current_user), s: Session = D
 @router.delete("/seasons/{season_id}", status_code=204)
 def delete_my_season(season_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
     if not repo.delete_season(s, user, season_id):
+        raise HTTPException(404, "Not found")
+
+
+# ------------------------------------------------------------------ careers
+def _career_out(s: Session, user: User, c) -> CareerOut:
+    season = repo.career_season(s, user, c)
+    st = c.state
+    try:
+        career_rules.ready_to_race(st)
+        blocker = None
+    except career_rules.CareerError as e:
+        blocker = str(e)
+    if season.finished:
+        blocker = "Season over: start the next one"
+    ups = [UpgradeOut(area=a, label=label, level=st["upgrades"][a],
+                      next_cost=None if st["upgrades"][a] >= career_rules.MAX_LEVEL
+                      else career_rules.upgrade_cost(st["upgrades"][a]))
+           for a, label in career_rules.AREAS.items()]
+    contract = lambda d: ContractOut(**{k: d[k] for k in ("code", "name", "rating", "salary", "years")})
+    return CareerOut(id=c.id, team=c.team, laps=c.laps, weather=c.weather, season_no=st["season_no"],
+                     season_id=season.id, rounds_done=season.rounds_done, season_finished=season.finished,
+                     budget=st["budget"], income=st["income"], spent=st["spent"], upgrades=ups,
+                     drivers=[contract(d) for d in st["drivers"]],
+                     market=[contract(d) for d in sorted(st["market"], key=lambda d: -d["rating"])],
+                     history=st["history"], ready=blocker is None, blocker=blocker, created_at=c.created_at)
+
+
+def _career_call(s: Session, user: User, career_id: int, action: str, **kw) -> CareerOut:
+    try:
+        c = repo.career_action(s, user, career_id, action, **kw)
+    except repo.PermissionDenied:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed")
+    except repo.SeasonError as e:
+        if str(e) == "Career not found":
+            raise HTTPException(404, "Not found")
+        raise HTTPException(400, str(e))
+    return _career_out(s, user, c)
+
+
+@router.post("/careers", response_model=CareerOut, status_code=201)
+def new_career(body: CareerIn, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if body.team not in _TEAM_NAMES:
+        raise HTTPException(400, "Unknown team")
+    try:
+        c = repo.create_career(s, user, body.team, body.laps, body.weather)
+    except repo.PermissionDenied:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed")
+    except repo.SeasonError as e:
+        raise HTTPException(400, str(e))
+    return _career_out(s, user, c)
+
+
+@router.get("/careers", response_model=list[CareerOut])
+def my_careers(user: User = Depends(current_user), s: Session = Depends(get_session)):
+    return [_career_out(s, user, c) for c in repo.list_careers(s, user)]
+
+
+@router.get("/careers/{career_id}", response_model=CareerOut)
+def my_career(career_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    c = repo.get_career(s, user, career_id)
+    if c is None:
+        raise HTTPException(404, "Not found")
+    return _career_out(s, user, c)
+
+
+@router.post("/careers/{career_id}/upgrade", response_model=CareerOut)
+def career_upgrade(career_id: int, body: UpgradeIn, user: User = Depends(current_user),
+                   s: Session = Depends(get_session)):
+    return _career_call(s, user, career_id, "upgrade", area=body.area)
+
+
+@router.post("/careers/{career_id}/sign", response_model=CareerOut)
+def career_sign(career_id: int, body: SignIn, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    return _career_call(s, user, career_id, "sign", code=body.code, replace=body.replace, years=body.years)
+
+
+@router.post("/careers/{career_id}/renew", response_model=CareerOut)
+def career_renew(career_id: int, body: RenewIn, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    return _career_call(s, user, career_id, "renew", code=body.code, years=body.years)
+
+
+@router.post("/careers/{career_id}/next-season", response_model=CareerOut)
+def career_next(career_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    return _career_call(s, user, career_id, "next_season")
+
+
+@router.delete("/careers/{career_id}", status_code=204)
+def delete_my_career(career_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not repo.delete_career(s, user, career_id):
         raise HTTPException(404, "Not found")
 
 

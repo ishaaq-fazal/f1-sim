@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import logging
 from enum import Enum
 
-from sqlalchemy import UniqueConstraint, event, inspect, text
+from sqlalchemy import JSON, Column, UniqueConstraint, event, inspect, text
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 from .config import ROOT, settings
@@ -45,10 +45,23 @@ class RaceRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
+class Career(SQLModel, table=True):
+    """Several seasons in a row with one team. Budget, upgrades and contracts live in `state`
+    (see sim/career.py); only server code that has checked ownership ever changes it."""
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    team: str = Field(max_length=20)
+    laps: int
+    weather: str = Field(default="dry", max_length=12)
+    state: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    created_at: datetime = Field(default_factory=_now)
+
+
 class Season(SQLModel, table=True):
     """An 8-round championship run by one user with one team."""
     id: int | None = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id", index=True)
+    career_id: int | None = Field(default=None, foreign_key="career.id", index=True)
     team: str = Field(max_length=20)
     laps: int
     weather: str = Field(default="dry", max_length=12)
@@ -115,6 +128,11 @@ def _upgrade() -> None:
     if "track" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE racerecord ADD COLUMN track VARCHAR(20) NOT NULL DEFAULT 'harbourline'"))
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns("season")} if insp.has_table("season") else None
+    if cols is not None and "career_id" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE season ADD COLUMN career_id INTEGER REFERENCES career(id)"))
 
 
 def ping() -> bool:

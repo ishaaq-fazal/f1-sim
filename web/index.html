@@ -18,6 +18,7 @@
     <div class="controls">
       <button id="pauseBtn" class="btn" disabled>Pause</button>
       <div class="seg" id="speedSeg" role="group" aria-label="Simulation speed"></div>
+      <button id="hqBtn" class="btn ghost" hidden>Team HQ</button>
       <button id="standingsBtn" class="btn ghost" hidden>Standings</button>
       <button id="newRaceBtn" class="btn ghost">New race</button>
       <span class="user" id="userChip" hidden></span>
@@ -86,6 +87,7 @@
     <form method="dialog" id="startForm">
       <h1>Pit Wall</h1>
       <p class="lede">Pick a team. You run its strategy: call the pit stops, choose tyres and set the pace. The rest of the grid races itself.</p>
+      <section class="season-box" id="careerBox" aria-label="Career"></section>
       <section class="season-box" id="seasonBox" aria-label="Season"></section>
       <fieldset>
         <legend>Circuit</legend>
@@ -152,6 +154,33 @@
       <div class="row end">
         <button class="btn ghost" value="close">Close</button>
         <button class="btn primary" id="nextRoundBtn" type="button">Next round</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="hqDialog">
+    <form method="dialog">
+      <h1>Team HQ</h1>
+      <p class="lede" id="hqLede"></p>
+      <div class="hq-money" id="hqMoney"></div>
+      <p class="error" id="hqError" role="alert"></p>
+      <h2 class="hq-h">Car development</h2>
+      <table class="tower results hq"><tbody id="hqUpgrades"></tbody></table>
+      <h2 class="hq-h">Your drivers</h2>
+      <table class="tower results hq"><tbody id="hqDrivers"></tbody></table>
+      <div id="hqMarketBox">
+        <h2 class="hq-h">Driver market <span class="hint" id="hqMarketHint"></span></h2>
+        <table class="tower results hq"><tbody id="hqMarket"></tbody></table>
+      </div>
+      <details class="history" id="hqHistoryBox">
+        <summary>Past seasons</summary>
+        <table class="tower results hq"><tbody id="hqHistory"></tbody></table>
+      </details>
+      <div class="row end">
+        <button class="btn ghost danger" id="hqQuitBtn" type="button">Abandon career</button>
+        <button class="btn ghost" value="close">Close</button>
+        <button class="btn" id="hqStandingsBtn" type="button">Standings</button>
+        <button class="btn primary" id="hqGoBtn" type="button">Start round</button>
       </div>
     </form>
   </dialog>
