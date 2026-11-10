@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from enum import Enum
 
 from sqlalchemy import UniqueConstraint, event, inspect, text
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 from .config import ROOT, settings
+
+log = logging.getLogger("uvicorn.error")   # shown in the host logs alongside uvicorn's own lines
 
 
 class Role(str, Enum):
@@ -77,7 +80,10 @@ def _make_engine(url: str):
         eng = create_engine(url, connect_args={"check_same_thread": False})
     else:
         # pool_pre_ping drops connections the database closed while idle
-        eng = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5)
+        # connect_timeout: fail in seconds (with an error in the log) rather than hang if the
+        # database can't be reached, so a bad deploy shows why instead of timing out silently.
+        eng = create_engine(url, pool_pre_ping=True, pool_size=5, max_overflow=5,
+                            connect_args={"connect_timeout": 10})
     if url.startswith("sqlite"):
         @event.listens_for(eng, "connect")
         def _fk_on(dbapi_conn, _):
@@ -89,8 +95,14 @@ engine = _make_engine(settings.database_url)
 
 
 def init_db() -> None:
-    SQLModel.metadata.create_all(engine)
+    log.info("Preparing database (%s)", engine.dialect.name)
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            # Don't wait forever if another connection holds a lock on a table we touch.
+            conn.execute(text("SET LOCAL lock_timeout = '20s'"))
+        SQLModel.metadata.create_all(conn)
     _upgrade()
+    log.info("Database ready")
 
 
 def _upgrade() -> None:
