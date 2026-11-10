@@ -16,6 +16,10 @@ The race engine is Python; the browser draws it.
   Sandridge Raceway (very high wear, easy to pass), Alderwood Park (high wear, hard to pass).
 * **Starting tyres**: start each of your cars on Soft, Medium or Hard, or let the model choose.
   The two-compound rule still applies (+10 s if you only use one).
+* **Season mode**: an 8-race championship, two rounds at each circuit, with the same team all
+  season. Every car scores F1 points (25-18-15-12-10-8-6-4-2-1 for the top 10), and the
+  leaderboard shows drivers' and teams' standings plus the calendar with each round's winner.
+  Seasons are saved to your account; only you can see or delete them.
 * **Weather**: dry, wet or changeable races. Rain comes and goes, the track soaks and dries out
   over time, and a forecast shows the chance of rain. Intermediates and Wets are quick in the wet
   but overheat on a drying track; AI teams switch tyres when the gain pays for the stop. Using a
@@ -34,6 +38,7 @@ sim/        pure-Python race engine (no web code)
   strategy.py   pit strategy optimiser (used by AI teams and for "model's best plan")
   engine.py     the race: lap times, fuel, traffic, overtakes, pit stops, VSC, DNFs, starting tyres
   grid.py       default (made-up) teams and drivers
+  season.py     season calendar, F1 points and championship standings
 server/     FastAPI app: serves web/, streams the race over a WebSocket, accounts + database
   repo.py       the only code that touches the database (every query scoped to its owner)
   cli.py        admin commands: list-users, reset-password
@@ -57,7 +62,7 @@ Forgot a password? `python -m server.cli reset-password you@example.com`
 ## Checks
 
 ```bash
-pytest -q                          # 90 tests: engine, circuits, weather, accounts, security
+pytest -q                          # 106 tests: engine, circuits, weather, seasons, accounts, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 

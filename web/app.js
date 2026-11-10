@@ -69,7 +69,8 @@ async function submitAuth(kind) {
 
 async function openStart() {
   if (!S.user) { $("authDialog").showModal(); return; }
-  await loadHistory();
+  await Promise.all([loadHistory(), loadSeason()]);
+  renderSeasonBox();
   $("startDialog").showModal();
   redrawOutlines();
 }
@@ -142,6 +143,13 @@ async function init() {
   $("newRaceBtn").addEventListener("click", openStart);
   $("startForm").addEventListener("submit", (e) => { e.preventDefault(); startRace(); });
   $("againBtn").addEventListener("click", () => setTimeout(openStart, 0));
+  $("standingsBtn").addEventListener("click", openStandings);
+  $("resultStandingsBtn").addEventListener("click", () => { $("resultDialog").close(); openStandings(); });
+  $("nextRoundBtn").addEventListener("click", () => { $("standingsDialog").close(); openStart(); });
+  $("standingsSeg").addEventListener("click", (e) => {
+    const v = e.target.dataset && e.target.dataset.v;
+    if (v) { S.standingsTab = v; renderStandings(); }
+  });
   window.addEventListener("resize", () => { S.trackCache = null; });
   initChart();
   await loadMe();
@@ -278,10 +286,12 @@ function onMessage(m) {
   if (m.type === "init") {
     S.track = prepTrack(m.track); S.trackCache = null;
     S.team = m.team; S.compounds = m.compounds; S.canCommand = m.can_command;
+    S.seasonRace = m.season || null;
+    $("trackName").dataset.round = S.seasonRace ? `Round ${S.seasonRace.round}/${S.seasonRace.rounds} · ` : "";
     S.disp.clear(); S.laps.clear(); S.charted.clear(); S.fastest = null; S.resultShown = false;
     S.paused = false; $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = false;
     $("log").replaceChildren();
-    $("trackName").textContent = `${m.track.name} · ${(m.track.length_m / 1000).toFixed(2)} km`;
+    $("trackName").textContent = `${$("trackName").dataset.round}${m.track.name} · ${(m.track.length_m / 1000).toFixed(2)} km`;
     const t = S.setup.teams.find((x) => x.id === m.team);
     const chip = $("teamChip"); chip.textContent = t.name; chip.style.background = t.color; chip.style.color = "#000";
     resetChart();
@@ -478,19 +488,180 @@ function addLog(ev) {
   while (log.children.length > 200) log.lastChild.remove();
 }
 
-function showResults(st) {
+async function showResults(st) {
   const body = $("resultBody");
   const mine = st.cars.filter((c) => c.controlled).map((c) => `${c.code} P${c.pos}`).join(", ");
   $("resultLede").textContent = `Your team: ${mine}. Winner: ${st.cars[0].name}.`;
+  const season = S.seasonRace;
+  $("resultStandingsBtn").hidden = !season;
+  $("againBtn").textContent = season && season.round < season.rounds ? "Next round" : "New race";
+  if (season) {
+    const pts = st.cars.filter((c) => c.controlled).reduce((a, c) => a + racePoints(c), 0);
+    await loadSeason(season.id);
+    const mineTeam = S.season && S.season.teams.find((t) => t.team === S.season.season.team);
+    $("resultLede").textContent += ` Round ${season.round} of ${season.rounds}: your team scored ${pts} point${pts === 1 ? "" : "s"}` +
+      (mineTeam ? ` and is P${mineTeam.pos} in the teams' championship on ${mineTeam.points}.` : ".");
+  }
   body.replaceChildren(...st.cars.map((c) => {
     const tr = el("tr"); if (c.controlled) tr.classList.add("mine");
     const bar = el("td", "teambar"); const i = el("i"); i.style.background = c.color; bar.append(i);
     tr.append(el("td", null, String(c.pos)), bar, el("td", null, c.name),
       el("td", "r", c.pos === 1 ? "WINNER" : c.gap), el("td", "r", c.penalty ? `+${c.penalty}s pen` : ""),
       el("td", "r", `${c.pits} stop${c.pits === 1 ? "" : "s"}`));
+    if (season) tr.append(el("td", "r pts", racePoints(c) ? `+${racePoints(c)}` : ""));
     return tr;
   }));
   $("resultDialog").showModal();
+}
+
+// ---------------------------------------------------------------- season
+const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
+const racePoints = (c) => (c.retired ? 0 : POINTS[c.pos - 1] || 0);
+const teamName = (id) => (S.setup.teams.find((t) => t.id === id) || { name: id }).name;
+const teamColor = (id) => (S.setup.teams.find((t) => t.id === id) || { color: "#888" }).color;
+const trackName = (id) => (S.setup.tracks.find((t) => t.id === id) || { name: id }).name;
+S.standingsTab = "drivers";
+
+// Loads the season to show: the given one, else your latest unfinished one, else your latest one.
+async function loadSeason(id) {
+  if (id === undefined) {
+    const r = await api("/api/seasons");
+    const list = r.ok ? await r.json() : [];
+    const pick = list.find((x) => !x.finished) || list[0];
+    id = pick ? pick.id : null;
+  }
+  S.season = null;
+  if (id != null) {
+    const r = await api(`/api/seasons/${id}`);
+    if (r.ok) S.season = await r.json();
+  }
+  $("standingsBtn").hidden = !S.season;
+  return S.season;
+}
+
+function myTeamStanding() {
+  return S.season && S.season.teams.find((t) => t.team === S.season.season.team);
+}
+
+function renderSeasonBox() {
+  const box = $("seasonBox");
+  const sz = S.season && S.season.season;
+  const text = el("div", "stext");
+  const buttons = [];
+  if (sz && !sz.finished) {
+    const next = sz.rounds_done + 1;
+    const mine = myTeamStanding();
+    text.append(el("b", null, `Season with ${teamName(sz.team)}`),
+      document.createTextNode(` · round ${next} of 8 at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · ${sz.weather}` +
+        (mine ? ` · teams' championship P${mine.pos} on ${mine.points} pts` : "")));
+    const go = el("button", "btn primary", `Start round ${next}`); go.type = "button";
+    go.addEventListener("click", () => startSeasonRound(sz.id));
+    const table = el("button", "btn", "Standings"); table.type = "button";
+    table.addEventListener("click", () => { $("startDialog").close(); openStandings(); });
+    const quit = el("button", "btn ghost danger", "Abandon season"); quit.type = "button";
+    quit.addEventListener("click", async () => {
+      if (!confirm("Abandon this season? Its standings will be deleted.")) return;
+      await api(`/api/seasons/${sz.id}`, { method: "DELETE" });
+      await loadSeason(); renderSeasonBox();
+    });
+    buttons.push(go, table, quit);
+    // your starting tyre picks below apply to the season's team
+    const radio = document.querySelector(`input[name="team"][value="${sz.team}"]`);
+    if (radio && !radio.checked) { radio.checked = true; buildTyrePicker(); }
+  } else {
+    text.append(el("b", null, "Season mode"),
+      document.createTextNode(": 8 races, 2 at each circuit, scored with F1 points (25-18-15-12-10-8-6-4-2-1). " +
+        "Uses the team, laps and weather you pick below, and you keep that team all season."));
+    const go = el("button", "btn", "Start a season"); go.type = "button";
+    go.addEventListener("click", startSeason);
+    buttons.push(go);
+    if (sz) {
+      const last = el("button", "btn ghost", "Last season's standings"); last.type = "button";
+      last.addEventListener("click", () => { $("startDialog").close(); openStandings(); });
+      buttons.push(last);
+    }
+  }
+  box.replaceChildren(text, ...buttons);
+}
+
+async function startSeason() {
+  const team = document.querySelector('input[name="team"]:checked').value;
+  const body = { team, laps: Number($("lapsSelect").value), weather: $("weatherSelect").value };
+  const r = await api("/api/seasons", { method: "POST", body });
+  if (!r.ok) {
+    let msg = "Could not start a season.";
+    try { msg = (await r.json()).detail || msg; } catch (_) { /* keep default */ }
+    $("startError").textContent = typeof msg === "string" ? msg : "Could not start a season.";
+    return;
+  }
+  const sz = await r.json();
+  await loadSeason(sz.id);
+  startSeasonRound(sz.id);
+}
+
+function startSeasonRound(id) {
+  const sz = S.season.season;
+  // team, circuit, laps and weather come from the season on the server; this just names it
+  const msg = { type: "start", team: sz.team, laps: sz.laps, season: id };
+  if (Object.keys(S.startTyres).length) msg.tyres = { ...S.startTyres };
+  connect(() => {
+    S.ws.send(JSON.stringify(msg));
+    $("startDialog").close();
+  });
+}
+
+async function openStandings() {
+  if (!S.season) await loadSeason();
+  if (!S.season) return;
+  renderStandings();
+  $("standingsDialog").showModal();
+}
+
+function renderStandings() {
+  const d = S.season, sz = d.season;
+  for (const b of $("standingsSeg").children) b.classList.toggle("on", b.dataset.v === S.standingsTab);
+  $("standingsLede").textContent = `${teamName(sz.team)} · ${sz.finished ? "season complete" : `after ${sz.rounds_done} of 8 rounds`}` +
+    ` · ${sz.laps} laps · ${sz.weather}`;
+  $("standingsRules").textContent = `Points for P1 to P10: ${d.points_system.join(", ")}. Retirements score nothing. Ties go to the most wins, then most 2nd places.`;
+  const nb = $("nextRoundBtn");
+  nb.hidden = sz.finished;
+  nb.textContent = `Go to round ${sz.rounds_done + 1}`;
+  const head = (...cols) => { const tr = el("tr"); cols.forEach(([t, cls]) => tr.append(el("th", cls, t))); return tr; };
+  const bar = (team) => { const td = el("td", "teambar"); const i = el("i"); i.style.background = teamColor(team); td.append(i); return td; };
+  let rows = [];
+  if (S.standingsTab === "drivers") {
+    $("standingsHead").replaceChildren(head(["P"], [""], ["Driver"], ["Team"], ["Wins", "r"], ["Podiums", "r"], ["Pts", "r"]));
+    rows = d.drivers.map((x) => {
+      const tr = el("tr"); if (x.team === sz.team) tr.classList.add("mine");
+      tr.append(el("td", null, String(x.pos)), bar(x.team), el("td", null, `${x.name} (${x.code})`),
+        el("td", null, teamName(x.team)), el("td", "r", String(x.wins)), el("td", "r", String(x.podiums)),
+        el("td", "r pts", String(x.points)));
+      return tr;
+    });
+  } else if (S.standingsTab === "teams") {
+    $("standingsHead").replaceChildren(head(["P"], [""], ["Team"], ["Wins", "r"], ["Pts", "r"]));
+    rows = d.teams.map((x) => {
+      const tr = el("tr"); if (x.team === sz.team) tr.classList.add("mine");
+      tr.append(el("td", null, String(x.pos)), bar(x.team), el("td", null, x.name),
+        el("td", "r", String(x.wins)), el("td", "r pts", String(x.points)));
+      return tr;
+    });
+  } else {
+    const names = new Map(d.drivers.map((x) => [x.code, x.name]));
+    $("standingsHead").replaceChildren(head(["Rd"], ["Circuit"], ["Winner"], ["Your pts", "r"]));
+    rows = d.rounds.map((x) => {
+      const tr = el("tr");
+      tr.classList.add(x.done ? "done" : x.round === sz.rounds_done + 1 ? "next" : "todo");
+      tr.append(el("td", null, String(x.round)), el("td", null, trackName(x.track)),
+        el("td", null, x.done ? (names.get(x.winner) || x.winner || "–") : x.round === sz.rounds_done + 1 ? "next" : ""),
+        el("td", "r pts", x.done ? String(x.your_points) : ""));
+      return tr;
+    });
+  }
+  if (!rows.length) {
+    const tr = el("tr"); const td = el("td", null, "No rounds raced yet."); td.colSpan = 7; tr.append(td); rows = [tr];
+  }
+  $("standingsBody").replaceChildren(...rows);
 }
 
 // ---------------------------------------------------------------- lap chart

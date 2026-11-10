@@ -16,9 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from sim import TEAMS, RaceConfig, RaceEngine, default_grid
+from sim.season import ROUNDS, track_for_round
 from sim.track import TRACK_SPECS, get_track
 from sim.tyres import COMPOUNDS
 
@@ -128,6 +130,7 @@ class RaceSession:
         self.paused = False
         self.limiter = SlidingWindow(settings.ws_msgs_per_sec, 1.0)
         self.pred_cache: dict[str, tuple[tuple, dict | None]] = {}
+        self.season_round: tuple[int, int] | None = None     # (season id, round) while racing a season
 
     async def run(self) -> None:
         receiver = asyncio.create_task(self._receive())
@@ -135,9 +138,9 @@ class RaceSession:
             while not receiver.done():
                 if self.engine and not self.paused and not self.engine.finished:
                     self.engine.step(TICK_S * self.speed)
-                    await self._send_state()
                     if self.engine.finished and not self.saved:
-                        self._save_result()
+                        self._save_result()       # saved before the final state, so standings are ready
+                    await self._send_state()
                 await asyncio.sleep(TICK_S)
             receiver.result()  # re-raise disconnects
         finally:
@@ -161,6 +164,22 @@ class RaceSession:
 
     async def _handle(self, cmd) -> None:
         if isinstance(cmd, StartCmd):
+            if cmd.season is not None:
+                with Session(db_engine) as s:
+                    season = repo.get_season(s, self.user, cmd.season)   # owner-scoped
+                if season is None:
+                    return await self._error("Season not found")
+                if season.finished:
+                    return await self._error("That season is over")
+                if self.user.role not in (Role.principal, Role.admin):
+                    return await self._error("Viewers can't run a season")
+                # The season decides team, circuit, laps and weather; only starting tyres are your call.
+                round_no = season.rounds_done + 1
+                cmd = cmd.model_copy(update={"team": season.team, "track": track_for_round(round_no),
+                                             "laps": season.laps, "weather": season.weather, "seed": None})
+                self.season_round = (season.id, round_no)
+            else:
+                self.season_round = None
             if cmd.team not in TEAM_IDS:
                 return await self._error("Unknown team")
             if cmd.track not in TRACK_SPECS:
@@ -198,7 +217,7 @@ class RaceSession:
         e = self.engine
         await self.ws.send_text(json.dumps({
             "type": "init", "track": e.track.to_json(), "team": self.team, "laps": e.cfg.laps,
-            "seed": self.seed, "can_command": self.user.role in (Role.principal, Role.admin),
+            "seed": self.seed, "season": self._season_json(), "can_command": self.user.role in (Role.principal, Role.admin),
             "compounds": {k: {"name": c.name, "color": c.color} for k, c in COMPOUNDS.items()},
         }))
         await self._send_state()
@@ -226,13 +245,29 @@ class RaceSession:
         order = self.engine.order()
         mine = [(i, c) for i, c in enumerate(order, 1) if c.driver.team == self.team]
         summary = ", ".join(f"{c.code} {'DNF' if c.retired else f'P{i}'}" for i, c in mine)
+        if self.season_round:
+            summary = f"Season round {self.season_round[1]}: {summary}"
         with Session(db_engine) as s:
             owner = repo.user_by_id(s, self.user.id)
-            if owner is not None:
-                repo.save_race(s, owner, team=self.team, track=self.engine.track.id,
-                               laps=self.engine.cfg.laps, seed=self.seed,
-                               best_position=min((i for i, c in mine if not c.retired), default=None),
-                               winner=order[0].driver.name, summary=summary[:400])
+            if owner is None:
+                return
+            repo.save_race(s, owner, team=self.team, track=self.engine.track.id,
+                           laps=self.engine.cfg.laps, seed=self.seed,
+                           best_position=min((i for i, c in mine if not c.retired), default=None),
+                           winner=order[0].driver.name, summary=summary[:400])
+            if self.season_round:
+                season_id, round_no = self.season_round
+                results = [(c.code, c.driver.team, i, c.retired) for i, c in enumerate(order, 1)]
+                try:
+                    repo.record_round(s, owner, season_id, round_no, self.engine.track.id, self.seed, results)
+                except (repo.SeasonError, repo.PermissionDenied, IntegrityError):
+                    s.rollback()
+                    log.warning("Season round not recorded (season %s round %s)", season_id, round_no)
+
+    def _season_json(self) -> dict | None:
+        if not self.season_round:
+            return None
+        return {"id": self.season_round[0], "round": self.season_round[1], "rounds": ROUNDS}
 
     async def _error(self, detail: str) -> None:
         await self.ws.send_text(json.dumps({"type": "error", "detail": detail}))

@@ -18,6 +18,7 @@
     <div class="controls">
       <button id="pauseBtn" class="btn" disabled>Pause</button>
       <div class="seg" id="speedSeg" role="group" aria-label="Simulation speed"></div>
+      <button id="standingsBtn" class="btn ghost" hidden>Standings</button>
       <button id="newRaceBtn" class="btn ghost">New race</button>
       <span class="user" id="userChip" hidden></span>
       <button id="logoutBtn" class="btn ghost" hidden>Sign out</button>
@@ -85,6 +86,7 @@
     <form method="dialog" id="startForm">
       <h1>Pit Wall</h1>
       <p class="lede">Pick a team. You run its strategy: call the pit stops, choose tyres and set the pace. The rest of the grid races itself.</p>
+      <section class="season-box" id="seasonBox" aria-label="Season"></section>
       <fieldset>
         <legend>Circuit</legend>
         <div class="tracks" id="trackPicker"></div>
@@ -132,7 +134,24 @@
       <table class="tower results"><tbody id="resultBody"></tbody></table>
       <div class="row end">
         <button class="btn ghost" value="close">Close</button>
+        <button class="btn" id="resultStandingsBtn" type="button" hidden>Standings</button>
         <button class="btn primary" id="againBtn" value="again">New race</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="standingsDialog">
+    <form method="dialog">
+      <h1>Championship</h1>
+      <p class="lede" id="standingsLede"></p>
+      <div class="seg small" id="standingsSeg">
+        <button type="button" data-v="drivers" class="on">Drivers</button><button type="button" data-v="teams">Teams</button><button type="button" data-v="rounds">Calendar</button>
+      </div>
+      <table class="tower results standings"><thead id="standingsHead"></thead><tbody id="standingsBody"></tbody></table>
+      <p class="rules" id="standingsRules"></p>
+      <div class="row end">
+        <button class="btn ghost" value="close">Close</button>
+        <button class="btn primary" id="nextRoundBtn" type="button">Next round</button>
       </div>
     </form>
   </dialog>

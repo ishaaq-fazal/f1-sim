@@ -26,6 +26,8 @@ class StartCmd(_Msg):
     weather: Literal["dry", "wet", "changeable"] = "dry"
     # Starting tyre for each of your two cars, keyed by driver code.
     tyres: dict[DriverCode, Compound] | None = Field(default=None, max_length=2)
+    # Run the next round of one of your seasons. The season fixes the team, circuit, laps and weather.
+    season: int | None = Field(default=None, ge=1, le=2**31 - 1)
 
 
 class SpeedCmd(_Msg):
@@ -135,3 +137,54 @@ class RaceOut(BaseModel):
     winner: str | None
     summary: str
     created_at: datetime
+
+
+# ------------------------------------------------------------------ seasons
+class SeasonIn(_In):
+    team: TeamId
+    laps: int = Field(ge=5, le=70)
+    weather: Literal["dry", "wet", "changeable"] = "dry"
+
+
+class SeasonOut(BaseModel):
+    id: int
+    team: str
+    laps: int
+    weather: str
+    rounds_done: int
+    finished: bool
+    created_at: datetime
+
+
+class RoundOut(BaseModel):
+    round: int
+    track: str
+    done: bool
+    winner: str | None = None        # driver code
+    your_points: int | None = None
+
+
+class DriverStandingOut(BaseModel):
+    pos: int
+    code: str
+    name: str
+    team: str
+    points: int
+    wins: int
+    podiums: int
+
+
+class TeamStandingOut(BaseModel):
+    pos: int
+    team: str
+    name: str
+    points: int
+    wins: int
+
+
+class SeasonDetailOut(BaseModel):
+    season: SeasonOut
+    points_system: list[int]
+    rounds: list[RoundOut]
+    drivers: list[DriverStandingOut]
+    teams: list[TeamStandingOut]

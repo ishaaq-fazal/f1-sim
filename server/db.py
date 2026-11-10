@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import event, inspect, text
+from sqlalchemy import UniqueConstraint, event, inspect, text
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 from .config import ROOT, settings
@@ -40,6 +40,34 @@ class RaceRecord(SQLModel, table=True):
     winner: str | None = Field(default=None, max_length=64)
     summary: str = Field(default="", max_length=400)
     created_at: datetime = Field(default_factory=_now)
+
+
+class Season(SQLModel, table=True):
+    """An 8-round championship run by one user with one team."""
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    team: str = Field(max_length=20)
+    laps: int
+    weather: str = Field(default="dry", max_length=12)
+    rounds_done: int = 0
+    finished: bool = False
+    created_at: datetime = Field(default_factory=_now)
+
+
+class SeasonResult(SQLModel, table=True):
+    """One car's result in one round. owner_id is repeated here so every query can be owner-scoped."""
+    __table_args__ = (UniqueConstraint("season_id", "round", "driver"),)
+    id: int | None = Field(default=None, primary_key=True)
+    season_id: int = Field(foreign_key="season.id", index=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    round: int
+    track: str = Field(max_length=20)
+    seed: int | None = None
+    driver: str = Field(max_length=3)
+    team: str = Field(max_length=20)
+    position: int
+    retired: bool = False
+    points: int = 0
 
 
 def _make_engine(url: str):

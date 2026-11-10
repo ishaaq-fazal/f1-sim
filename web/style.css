@@ -166,3 +166,16 @@ input[type=email], input[type=password] { background: var(--panel-2); border: 1p
 .weather .fc { color: var(--muted); margin-left: 6px; }
 .log .k-weather { color: #7fb8ff; }
 .predict .call { color: #7fb8ff; }
+
+/* ---------------------------------------------------------------- season */
+.season-box { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.season-box .stext { flex: 1 1 260px; font-size: 13px; color: var(--muted); }
+.season-box .stext b { color: var(--text); }
+.season-box .btn.danger { color: #ff6b6b; }
+#standingsDialog { width: min(640px, calc(100vw - 32px)); }
+#standingsSeg { margin: 4px 0 10px; }
+.standings th { font-size: 11px; color: var(--muted); text-align: left; font-weight: 600; }
+.standings .pts { font-weight: 700; }
+.standings tr.next td { color: var(--text); font-weight: 700; }
+.standings tr.todo td { color: var(--muted); }

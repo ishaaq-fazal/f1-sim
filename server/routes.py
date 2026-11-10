@@ -10,7 +10,11 @@ from .auth import (REFRESH_COOKIE, clear_auth_cookies, current_user, hash_passwo
                    set_auth_cookies, user_from_token, verify_password)
 from .config import settings
 from .db import Role, User, get_session
-from .schemas import LoginIn, RaceOut, RoleIn, SignupIn, UserOut
+from sim import TEAMS, default_grid
+from sim.season import POINTS, SCHEDULE, standings
+
+from .schemas import (DriverStandingOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
+                      SignupIn, TeamStandingOut, UserOut)
 from .security import SlidingWindow
 
 router = APIRouter(prefix="/api")
@@ -86,6 +90,56 @@ def my_race(race_id: int, user: User = Depends(current_user), s: Session = Depen
 @router.delete("/races/{race_id}", status_code=204)
 def delete_my_race(race_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
     if not repo.delete_race(s, user, race_id):
+        raise HTTPException(404, "Not found")
+
+
+# ------------------------------------------------------------------ seasons
+_TEAM_NAMES = {t[0]: t[1] for t in TEAMS}
+_DRIVER_NAMES = {d.code: d.name for d in default_grid()}
+
+
+@router.post("/seasons", response_model=SeasonOut, status_code=201)
+def new_season(body: SeasonIn, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if body.team not in _TEAM_NAMES:
+        raise HTTPException(400, "Unknown team")
+    try:
+        return repo.create_season(s, user, body.team, body.laps, body.weather)
+    except repo.PermissionDenied:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed")
+    except repo.SeasonError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/seasons", response_model=list[SeasonOut])
+def my_seasons(user: User = Depends(current_user), s: Session = Depends(get_session)):
+    return repo.list_seasons(s, user)
+
+
+@router.get("/seasons/{season_id}", response_model=SeasonDetailOut)
+def my_season(season_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    season = repo.get_season(s, user, season_id)
+    if season is None:                 # same 404 for "not yours" and "missing"
+        raise HTTPException(404, "Not found")
+    rows = repo.season_results(s, user, season.id)
+    rounds = []
+    for n, track in enumerate(SCHEDULE, 1):
+        rr = [r for r in rows if r.round == n]
+        winner = next((r.driver for r in rr if r.position == 1 and not r.retired), None)
+        rounds.append(RoundOut(round=n, track=track, done=bool(rr), winner=winner,
+                               your_points=sum(r.points for r in rr if r.team == season.team) if rr else None))
+    drivers, teams = standings(rows)
+    return SeasonDetailOut(
+        season=SeasonOut.model_validate(season, from_attributes=True), points_system=list(POINTS), rounds=rounds,
+        drivers=[DriverStandingOut(pos=i, code=d.key, name=_DRIVER_NAMES.get(d.key, d.key), team=d.team,
+                                   points=d.points, wins=d.wins, podiums=d.podiums)
+                 for i, d in enumerate(drivers, 1)],
+        teams=[TeamStandingOut(pos=i, team=t.key, name=_TEAM_NAMES.get(t.key, t.key), points=t.points, wins=t.wins)
+               for i, t in enumerate(teams, 1)])
+
+
+@router.delete("/seasons/{season_id}", status_code=204)
+def delete_my_season(season_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not repo.delete_season(s, user, season_id):
         raise HTTPException(404, "Not found")
 
 
