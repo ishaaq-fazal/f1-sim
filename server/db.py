@@ -62,6 +62,7 @@ class Season(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id", index=True)
     career_id: int | None = Field(default=None, foreign_key="career.id", index=True)
+    league_id: int | None = Field(default=None, foreign_key="league.id", index=True)
     team: str = Field(max_length=20)
     laps: int
     weather: str = Field(default="dry", max_length=12)
@@ -84,6 +85,29 @@ class SeasonResult(SQLModel, table=True):
     position: int
     retired: bool = False
     points: int = 0
+
+
+class League(SQLModel, table=True):
+    """A group of friends who each run their own season and compare points.
+    Only members can see a league; it is joined with its invite code."""
+    id: int | None = Field(default=None, primary_key=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    name: str = Field(max_length=40)
+    code: str = Field(index=True, unique=True, max_length=12)
+    laps: int
+    created_at: datetime = Field(default_factory=_now)
+
+
+class LeagueMember(SQLModel, table=True):
+    """One user's entry in a league: the season they run for it and the name others see
+    (never their email)."""
+    __table_args__ = (UniqueConstraint("league_id", "user_id"), UniqueConstraint("league_id", "nickname"))
+    id: int | None = Field(default=None, primary_key=True)
+    league_id: int = Field(foreign_key="league.id", index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    season_id: int = Field(foreign_key="season.id", index=True)
+    nickname: str = Field(max_length=20)
+    joined_at: datetime = Field(default_factory=_now)
 
 
 def _make_engine(url: str):
@@ -133,6 +157,9 @@ def _upgrade() -> None:
     if cols is not None and "career_id" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE season ADD COLUMN career_id INTEGER REFERENCES career(id)"))
+    if cols is not None and "league_id" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE season ADD COLUMN league_id INTEGER REFERENCES league(id)"))
 
 
 def ping() -> bool:

@@ -67,7 +67,7 @@ def finish_round(email: str, season_id: int):
 def test_create_season_and_empty_standings(alice):
     s = new_season(alice)
     assert s["rounds_done"] == 0 and not s["finished"] and set(s) == {
-        "id", "team", "laps", "weather", "rounds_done", "finished", "created_at"}   # no owner id leaks
+        "id", "team", "laps", "weather", "rounds_done", "finished", "league_id", "created_at"}   # no owner id leaks
     d = alice.get(f"/api/seasons/{s['id']}").json()
     assert [r["track"] for r in d["rounds"]] == list(SCHEDULE)
     assert d["drivers"] == [] and d["points_system"][0] == 25

@@ -177,6 +177,7 @@ class SeasonOut(BaseModel):
     weather: str
     rounds_done: int
     finished: bool
+    league_id: int | None = None     # set when this is your season in a league
     created_at: datetime
 
 
@@ -299,3 +300,57 @@ class CareerOut(BaseModel):
     ready: bool
     blocker: str | None
     created_at: datetime
+
+
+# ------------------------------------------------------------------ leagues
+Nickname = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9 _.\-]{0,18}[A-Za-z0-9_.]$")]
+LeagueName = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9 _.'&!\-]{0,38}[A-Za-z0-9_.'!]$")]
+InviteCode = Annotated[str, Field(pattern=r"^[A-Za-z0-9]{8}$")]
+
+
+class LeagueIn(_In):
+    name: LeagueName
+    laps: int = Field(ge=5, le=70)
+    team: TeamId                 # the team you run in this league
+    nickname: Nickname           # what other members see instead of your email
+
+
+class JoinLeagueIn(_In):
+    code: InviteCode
+    team: TeamId
+    nickname: Nickname
+
+
+class LeagueOut(BaseModel):
+    id: int
+    name: str
+    code: str                    # members can share it to invite friends
+    laps: int
+    members: int
+    is_owner: bool
+    your_nickname: str
+    your_season_id: int
+    created_at: datetime
+
+
+class LeagueRowOut(BaseModel):
+    pos: int
+    nickname: str
+    team: str
+    team_name: str
+    you: bool
+    owner: bool
+    rounds_done: int
+    finished: bool
+    points: int
+    wins: int
+    podiums: int
+    best_finish: int | None
+    member_id: int | None = None   # only shown to the league's owner, to remove someone
+
+
+class LeagueDetailOut(BaseModel):
+    league: LeagueOut
+    rounds: int
+    schedule: list[str]
+    table: list[LeagueRowOut]

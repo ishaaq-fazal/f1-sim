@@ -602,9 +602,10 @@ S.standingsTab = "drivers";
 
 // Loads the season to show: the given one, else your latest unfinished one, else your latest one.
 async function loadSeason(id) {
+  if (id === undefined && S.focusSeason) id = S.focusSeason;     // racing a league season
   if (id === undefined) {
     const r = await api("/api/seasons");
-    const list = r.ok ? await r.json() : [];
+    const list = (r.ok ? await r.json() : []).filter((x) => x.league_id == null);   // leagues have their own screen
     const pick = list.find((x) => !x.finished) || list[0];
     id = pick ? pick.id : null;
   }
@@ -629,7 +630,7 @@ function renderSeasonBox() {
   if (sz && !sz.finished) {
     const next = sz.rounds_done + 1;
     const mine = myTeamStanding();
-    text.append(el("b", null, `Season with ${teamName(sz.team)}`),
+    text.append(el("b", null, sz.league_id ? `League season with ${teamName(sz.team)}` : `Season with ${teamName(sz.team)}`),
       document.createTextNode(` · round ${next} of ${ROUNDS()} at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · random weather` +
         (mine ? ` · teams' championship P${mine.pos} on ${mine.points} pts` : "")));
     const go = el("button", "btn primary", `Start round ${next}`); go.type = "button";
@@ -642,10 +643,22 @@ function renderSeasonBox() {
       await api(`/api/seasons/${sz.id}`, { method: "DELETE" });
       await loadSeason(); renderSeasonBox();
     });
-    buttons.push(go, table, quit);
+    if (sz.league_id) {
+      const lt = el("button", "btn", "League table"); lt.type = "button";
+      lt.addEventListener("click", () => { $("startDialog").close(); openLeagues(sz.league_id); });
+      buttons.push(go, table, lt);           // leave a league from its own screen
+    } else buttons.push(go, table, quit);
     // your starting tyre picks below apply to the season's team
     const radio = document.querySelector(`input[name="team"][value="${sz.team}"]`);
     if (radio && !radio.checked) { radio.checked = true; buildTyrePicker(); }
+  } else if (sz && sz.league_id) {
+    text.append(el("b", null, "League season complete"),
+      document.createTextNode(` with ${teamName(sz.team)}. See how you finished against your friends.`));
+    const lt = el("button", "btn primary", "League table"); lt.type = "button";
+    lt.addEventListener("click", () => { $("startDialog").close(); openLeagues(sz.league_id); });
+    const table = el("button", "btn", "Standings"); table.type = "button";
+    table.addEventListener("click", () => { $("startDialog").close(); openStandings(); });
+    buttons.push(lt, table);
   } else {
     text.append(el("b", null, "Season mode"),
       document.createTextNode(`: ${ROUNDS()} races, one at every circuit, scored with F1 points (25-18-15-12-10-8-6-4-2-1). ` +

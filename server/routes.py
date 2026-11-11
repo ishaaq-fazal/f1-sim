@@ -12,9 +12,9 @@ from .config import settings
 from .db import Role, User, get_session
 from sim import TEAMS, default_grid
 from sim import career as career_rules
-from sim.season import POINTS, SCHEDULE, round_forecast, standings, track_for_round
+from sim.season import POINTS, ROUNDS, SCHEDULE, round_forecast, standings, track_for_round
 
-from .schemas import (NextRoundOut, CareerIn, CareerOut, ContractOut, DriverStandingOut, RenewIn, SignIn, UpgradeIn, UpgradeOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
+from .schemas import (JoinLeagueIn, LeagueDetailOut, LeagueIn, LeagueOut, LeagueRowOut, NextRoundOut, CareerIn, CareerOut, ContractOut, DriverStandingOut, RenewIn, SignIn, UpgradeIn, UpgradeOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
                       SignupIn, TeamStandingOut, UserOut)
 from .security import LoginLockout, SlidingWindow
 
@@ -23,6 +23,7 @@ _login_ip = SlidingWindow(settings.login_attempts_per_min * 4, 60.0)
 _login_email = SlidingWindow(settings.login_attempts_per_min, 60.0)
 _lockout = LoginLockout(max_failures=10, window=15 * 60, lock_s=15 * 60)
 _TOO_MANY = "Too many attempts, try again later"
+_league_join = SlidingWindow(10, 60.0)        # per user: stops guessing invite codes
 
 
 def _out(u: User) -> UserOut:
@@ -153,7 +154,7 @@ def next_round(season_id: int, user: User = Depends(current_user), s: Session = 
     n = season.rounds_done + 1
     track = track_for_round(n)
     return NextRoundOut(round=n, track=track, laps=season.laps,
-                        forecast=round_forecast(repo.round_seed(season.id, n), track, season.laps))
+                        forecast=round_forecast(repo.season_round_seed(season, n), track, season.laps))
 
 
 @router.delete("/seasons/{season_id}", status_code=204)
@@ -248,6 +249,82 @@ def career_next(career_id: int, user: User = Depends(current_user), s: Session =
 @router.delete("/careers/{career_id}", status_code=204)
 def delete_my_career(career_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
     if not repo.delete_career(s, user, career_id):
+        raise HTTPException(404, "Not found")
+
+
+# ------------------------------------------------------------------ leagues
+# Members only: a league someone isn't in gets the same 404 as one that doesn't exist.
+def _league_out(s: Session, league, me) -> LeagueOut:
+    return LeagueOut(id=league.id, name=league.name, code=league.code, laps=league.laps,
+                     members=repo.league_size(s, me), is_owner=league.owner_id == me.user_id, your_nickname=me.nickname,
+                     your_season_id=me.season_id, created_at=league.created_at)
+
+
+def _league_call(fn, *args):
+    try:
+        return fn(*args)
+    except repo.PermissionDenied:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed")
+    except repo.LeagueError as e:
+        raise HTTPException(400, str(e))
+    except IntegrityError:            # two people grabbing the same name at once
+        args[0].rollback()
+        raise HTTPException(400, "That name is taken in this league")
+
+
+@router.post("/leagues", response_model=LeagueOut, status_code=201)
+def new_league(body: LeagueIn, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if body.team not in _TEAM_NAMES:
+        raise HTTPException(400, "Unknown team")
+    league = _league_call(repo.create_league, s, user, body.name.strip(), body.laps, body.team, body.nickname.strip())
+    return _league_out(s, *repo.get_league(s, user, league.id))
+
+
+@router.post("/leagues/join", response_model=LeagueOut, status_code=201)
+def join_league(body: JoinLeagueIn, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not _league_join.allow(str(user.id)):
+        raise HTTPException(429, _TOO_MANY)
+    if body.team not in _TEAM_NAMES:
+        raise HTTPException(400, "Unknown team")
+    league = _league_call(repo.join_league, s, user, body.code, body.team, body.nickname.strip())
+    return _league_out(s, *repo.get_league(s, user, league.id))
+
+
+@router.get("/leagues", response_model=list[LeagueOut])
+def my_leagues(user: User = Depends(current_user), s: Session = Depends(get_session)):
+    return [_league_out(s, lg, m) for lg, m in repo.list_leagues(s, user)]
+
+
+@router.get("/leagues/{league_id}", response_model=LeagueDetailOut)
+def my_league(league_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    found = repo.get_league(s, user, league_id)
+    if found is None:
+        raise HTTPException(404, "Not found")
+    league, me = found
+    owner = league.owner_id == user.id
+    rows = repo.league_table(s, user, league_id) or []
+    table = [LeagueRowOut(**{k: v for k, v in r.items() if k != "_member_id"},
+                          team_name=_TEAM_NAMES.get(r["team"], r["team"]),
+                          member_id=r["_member_id"] if owner and not r["you"] else None) for r in rows]
+    return LeagueDetailOut(league=_league_out(s, league, me), rounds=ROUNDS, schedule=list(SCHEDULE), table=table)
+
+
+@router.post("/leagues/{league_id}/leave", status_code=204)
+def leave_my_league(league_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not repo.leave_league(s, user, league_id):
+        raise HTTPException(404, "Not found")
+
+
+@router.delete("/leagues/{league_id}/members/{member_id}", status_code=204)
+def remove_league_member(league_id: int, member_id: int, user: User = Depends(current_user),
+                         s: Session = Depends(get_session)):
+    if not repo.remove_member(s, user, league_id, member_id):
+        raise HTTPException(404, "Not found")
+
+
+@router.delete("/leagues/{league_id}", status_code=204)
+def delete_my_league(league_id: int, user: User = Depends(current_user), s: Session = Depends(get_session)):
+    if not repo.delete_league(s, user, league_id):
         raise HTTPException(404, "Not found")
 
 

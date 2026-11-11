@@ -226,3 +226,23 @@ dialog.menu { width: min(860px, calc(100vw - 32px)); padding: 32px; border-top: 
 .forecast .fc-summary.wet { color: #2f8cff; }
 .forecast .fc-row { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); margin-top: 4px; font-family: var(--mono); }
 .forecast .rules { margin: 6px 0 0; }
+
+/* ---------------------------------------------------------------- leagues */
+#leagueDialog { width: min(860px, calc(100vw - 32px)); }
+.league-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.league-item { width: 100%; text-align: left; cursor: pointer; margin: 0; }
+.league-item:hover { border-color: var(--accent); }
+.league-item .btn { pointer-events: none; }
+.league-code { display: flex; align-items: center; gap: 10px; margin: 6px 0 14px; color: var(--muted); }
+.league-code b { font-family: var(--mono); font-size: 20px; letter-spacing: .18em; color: var(--text); }
+.league-forms fieldset { margin-top: 12px; }
+.league-forms .row { flex-wrap: wrap; align-items: flex-end; }
+.league-forms input { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-width: 140px; }
+.league-forms .row { margin: 4px 0 0; }
+.league-forms .row label { justify-content: flex-end; }
+#joinCode { font-family: var(--mono); text-transform: uppercase; letter-spacing: .12em; }
+.team-sw { display: inline-block; width: 4px; height: 12px; margin-right: 6px; vertical-align: -1px; border-radius: 1px; }
+.btn.small { padding: 2px 8px; font-size: 12px; }
+#leagueDialog .btn.danger { color: #ff6b6b; }
+#leagueDialog .standings td, #leagueDialog .standings th { white-space: nowrap; }
+.table-scroll { overflow-x: auto; }

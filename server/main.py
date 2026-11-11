@@ -185,7 +185,7 @@ class RaceSession:
                 # The season decides team, circuit and laps; each round's weather is random but fixed
                 # in advance (shown as a forecast). Starting tyres are the player's call.
                 round_no = season.rounds_done + 1
-                seed = repo.round_seed(season.id, round_no)
+                seed = repo.season_round_seed(season, round_no)
                 cmd = cmd.model_copy(update={"team": season.team, "track": track_for_round(round_no),
                                              "laps": season.laps, "weather": round_weather(seed), "seed": seed})
                 self.season_round = (season.id, round_no)

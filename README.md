@@ -29,6 +29,11 @@ The race engine is Python; the browser draws it.
   Each round's weather is random (dry 32%, changeable 24%, showers 18%, drying 12%, wet 14%) and fixed in advance, so
   it can't be re-rolled. The pre-race screen shows the forecast and you pick your starting tyres.
   Seasons are saved to your account; only you can see or delete them.
+* **Online leagues**: start a league and share its 8-letter invite code; friends join with
+  their own team and a nickname. Everyone runs their own 10-round season, every round has the
+  same weather for everybody, and a shared table ranks players by the F1 points their team has
+  scored (ties on countback). Only members can see a league, other members only ever see your
+  nickname (never your email), and the owner can remove players or delete the league.
 * **Career mode**: season after season with one team. Win prize money after every round and a
   bigger payout by constructors' position at the end of each season, spend it on four areas of
   car development between races (power unit, aerodynamics, suspension/tyre wear, reliability),
@@ -79,7 +84,7 @@ Forgot a password? `python -m server.cli reset-password you@example.com`
 ## Checks
 
 ```bash
-pytest -q                          # 163 tests: engine, circuits, weather, seasons, career, login, security
+pytest -q                          # 185 tests: engine, circuits, weather, seasons, leagues, career, login, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 
@@ -149,7 +154,9 @@ can see or delete them.
 Argon2id password hashes, short-lived JWT access tokens plus refresh tokens in HttpOnly,
 SameSite=Strict cookies, revoked on logout or role change. All database access goes through `server/repo.py`, which scopes every race query to its
 owner and uses parameterised SQLModel queries only. Another user's race returns the same
-404 as a missing one. Tests in `tests/test_auth.py` try SQL injection, forged and expired
+404 as a missing one. Leagues are members-only: a league you aren't in returns 404, joining
+one never opens up other members' seasons or race history, and invite-code guesses are rate
+limited (`tests/test_leagues.py`). Tests in `tests/test_auth.py` try SQL injection, forged and expired
 tokens, cross-user reads and deletes, and role escalation.
 
 ## Next

@@ -3,7 +3,7 @@
 
 // ---------------------------------------------------------------- main menu
 function openMenu() {
-  for (const id of ["startDialog", "resultDialog", "standingsDialog", "hqDialog"]) {
+  for (const id of ["startDialog", "resultDialog", "standingsDialog", "hqDialog", "leagueDialog"]) {
     if ($(id).open) $(id).close();
   }
   $("menuUser").textContent = S.user ? `Signed in as ${S.user.email}` : "";
@@ -18,6 +18,8 @@ function openMenu() {
 function chooseMode(mode) {
   $("menuDialog").close();
   if (mode === "tutorial") return startTutorial();
+  if (mode === "leagues") return openLeagues();
+  if (mode === "season") S.focusSeason = null;      // plain Season mode: your own seasons, not a league's
   if (mode === "career") {
     // straight to Team HQ when a career exists
     return loadCareer().then((c) => (c ? (S.mode = "career", openHQ()) : openStart("career")));

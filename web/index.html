@@ -92,6 +92,7 @@
         <button type="button" class="menu-card" data-mode="quick"><b>Quick race</b><span>One race on any circuit, any team, any weather.</span></button>
         <button type="button" class="menu-card" data-mode="season"><b>Season</b><span>10 rounds, one at every circuit, scored with F1 points.</span></button>
         <button type="button" class="menu-card" data-mode="career"><b>Career</b><span>Season after season: budget, car upgrades and driver contracts.</span></button>
+        <button type="button" class="menu-card" data-mode="leagues"><b>Leagues</b><span>Friends each run their own season on the same weather. Compare points on one table.</span></button>
         <button type="button" class="menu-card" data-mode="tutorial"><b>How to play</b><span>A one-minute guided tour on a practice race.</span></button>
       </div>
       <fieldset class="menu-sound">
@@ -226,9 +227,57 @@
     </form>
   </dialog>
 
+  <dialog id="leagueDialog">
+    <form method="dialog" id="leagueForm">
+      <h1 id="leagueTitle">Leagues</h1>
+      <p class="lede" id="leagueLede">Everyone in a league runs their own 10-round season with their own team. Each round has the same weather for everybody, and the table compares the points your team scores. Only members can see a league.</p>
+      <div id="leagueList" class="league-list"></div>
+      <div id="leagueDetail" hidden>
+        <div class="league-code"><span>Invite code</span> <b id="leagueCode"></b>
+          <button type="button" class="btn ghost" id="leagueCopyBtn">Copy</button>
+          <span class="hint" id="leagueCopied"></span></div>
+        <div class="table-scroll"><table class="tower results standings"><thead><tr>
+          <th class="r">Pos</th><th>Player</th><th>Team</th><th class="r">Rounds</th><th class="r">Wins</th><th class="r">Podiums</th><th class="r">Best</th><th class="r">Points</th><th></th>
+        </tr></thead><tbody id="leagueTable"></tbody></table></div>
+        <p class="rules" id="leagueRules"></p>
+      </div>
+      <div id="leagueForms" class="league-forms">
+        <fieldset>
+          <legend>Join a league</legend>
+          <div class="row">
+            <label>Invite code <input id="joinCode" maxlength="8" autocomplete="off" placeholder="8 letters" spellcheck="false"></label>
+            <label>Your name in it <input id="joinNick" maxlength="20" placeholder="e.g. Adam"></label>
+            <label>Your team <select id="joinTeam"></select></label>
+            <button type="button" class="btn primary" id="joinBtn">Join</button>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Start a league</legend>
+          <div class="row">
+            <label>League name <input id="newLeagueName" maxlength="40" placeholder="e.g. Friday Club"></label>
+            <label>Laps per race <select id="newLeagueLaps">
+              <option value="15" selected>15 (quick)</option><option value="30">30</option>
+              <option value="50">50</option><option value="66">66 (full)</option></select></label>
+            <label>Your name in it <input id="newLeagueNick" maxlength="20" placeholder="e.g. Adam"></label>
+            <label>Your team <select id="newLeagueTeam"></select></label>
+            <button type="button" class="btn primary" id="newLeagueBtn">Create</button>
+          </div>
+        </fieldset>
+      </div>
+      <p class="error" id="leagueError" role="alert"></p>
+      <div class="row end">
+        <button class="btn ghost danger" id="leagueLeaveBtn" type="button" hidden>Leave league</button>
+        <button class="btn ghost danger" id="leagueDeleteBtn" type="button" hidden>Delete league</button>
+        <button class="btn ghost" id="leagueBackBtn" type="button">Back to menu</button>
+        <button class="btn primary" id="leagueRaceBtn" type="button" hidden>Race next round</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="vendor/chart.umd.js"></script>
   <script src="sound.js"></script>
   <script src="app.js"></script>
   <script src="menu.js"></script>
+  <script src="league.js"></script>
 </body>
 </html>
