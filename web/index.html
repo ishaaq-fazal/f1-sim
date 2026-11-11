@@ -92,7 +92,7 @@
         <button type="button" class="menu-card" data-mode="quick"><b>Quick race</b><span>One race on any circuit, any team, any weather.</span></button>
         <button type="button" class="menu-card" data-mode="season"><b>Season</b><span>10 rounds, one at every circuit, scored with F1 points.</span></button>
         <button type="button" class="menu-card" data-mode="career"><b>Career</b><span>Season after season: budget, car upgrades and driver contracts.</span></button>
-        <button type="button" class="menu-card" data-mode="leagues"><b>Leagues</b><span>Friends each run their own season on the same weather. Compare points on one table.</span></button>
+        <button type="button" class="menu-card" data-mode="leagues"><b>Leagues</b><span>Race your friends on one grid, each running a different team. Compare points on one table.</span></button>
         <button type="button" class="menu-card" data-mode="tutorial"><b>How to play</b><span>A one-minute guided tour on a practice race.</span></button>
       </div>
       <fieldset class="menu-sound">
@@ -230,7 +230,7 @@
   <dialog id="leagueDialog">
     <form method="dialog" id="leagueForm">
       <h1 id="leagueTitle">Leagues</h1>
-      <p class="lede" id="leagueLede">Everyone in a league runs their own 10-round season with their own team. Each round has the same weather for everybody, and the table compares the points your team scores. Only members can see a league.</p>
+      <p class="lede" id="leagueLede">Race your friends over a 10-round season. Each player runs a different team, every round is one race with everyone on the same grid, and it starts when all of you press Ready. Only members can see a league.</p>
       <div id="leagueList" class="league-list"></div>
       <div id="leagueDetail" hidden>
         <div class="league-code"><span>Invite code</span> <b id="leagueCode"></b>
@@ -270,6 +270,26 @@
         <button class="btn ghost danger" id="leagueDeleteBtn" type="button" hidden>Delete league</button>
         <button class="btn ghost" id="leagueBackBtn" type="button">Back to menu</button>
         <button class="btn primary" id="leagueRaceBtn" type="button" hidden>Race next round</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="lobbyDialog">
+    <form method="dialog">
+      <h1 id="lobbyTitle">Race lobby</h1>
+      <p class="lede" id="lobbyLede"></p>
+      <section class="forecast" id="lobbyForecast" aria-label="Weather forecast" hidden></section>
+      <h2 class="hq-h">Players</h2>
+      <ul class="lobby-players" id="lobbyPlayers"></ul>
+      <fieldset id="lobbyTyresBox">
+        <legend>Your starting tyres</legend>
+        <div class="start-tyres" id="lobbyTyres"></div>
+      </fieldset>
+      <p class="rules" id="lobbyRules">Everyone races on one grid at the same time, each commanding their own team. The race starts as soon as every player is ready. The league owner controls the race speed and pause.</p>
+      <p class="error" id="lobbyError" role="alert"></p>
+      <div class="row end">
+        <button class="btn ghost" id="lobbyBackBtn" type="button">Back</button>
+        <button class="btn primary" id="lobbyReadyBtn" type="button">Ready</button>
       </div>
     </form>
   </dialog>

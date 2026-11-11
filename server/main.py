@@ -30,7 +30,8 @@ from .auth import ACCESS_COOKIE, user_from_token
 from .config import ROOT, settings
 from .db import Role, User, engine as db_engine, init_db, ping
 from .routes import router
-from .schemas import (DriverOut, ModeCmd, PauseCmd, PitCmd, SetupOut, SpeedCmd, StartCmd, TeamOut, TrackOut,
+from . import league_race
+from .schemas import (DriverOut, LobbyCmd, ReadyCmd, ModeCmd, PauseCmd, PitCmd, SetupOut, SpeedCmd, StartCmd, TeamOut, TrackOut,
                       command_adapter)
 from .security import RateLimit, SameOriginWrites, SecurityHeaders, SlidingWindow, origin_allowed
 
@@ -134,12 +135,24 @@ class RaceSession:
         self.pred_cache: dict[str, tuple[tuple, dict | None]] = {}
         self.season_round: tuple[int, int] | None = None     # (season id, round) while racing a season
         self.career: dict | None = None                        # career setup for this race, if any
+        self.room: league_race.LeagueRoom | None = None        # league lobby / shared race, if in one
+        self.room_version = -1                                 # last lobby version sent
+        self.room_race = 0                                     # last shared race we sent "init" for
+        self.room_seq = 0                                      # last shared snapshot sent
+
+    def _leave_room(self) -> None:
+        if self.room is not None:
+            room, self.room = self.room, None
+            room.leave(self.user)
+            league_race.release(room)
 
     async def run(self) -> None:
         receiver = asyncio.create_task(self._receive())
         try:
             while not receiver.done():
-                if self.engine and not self.paused and not self.engine.finished:
+                if self.room is not None:
+                    await self._room_tick()
+                elif self.engine and not self.paused and not self.engine.finished:
                     self.engine.step(TICK_S * self.speed)
                     if self.engine.finished and not self.saved:
                         self._save_result()       # saved before the final state, so standings are ready
@@ -148,6 +161,74 @@ class RaceSession:
             receiver.result()  # re-raise disconnects
         finally:
             receiver.cancel()
+            self._leave_room()
+
+    # ------------------------------------------------------------ league lobby and shared race
+    async def _room_tick(self) -> None:
+        room = self.room
+        room.tick()
+        if room.version != self.room_version:
+            self.room_version = room.version
+            info = room.info(self.user)
+            if info is None:                           # removed from the league meanwhile
+                self._leave_room()
+                return await self._error("League not found")
+            await self.ws.send_text(json.dumps(room.lobby_json(self.user, info)))
+        out = []
+        with room.lock:
+            if room.engine is None or room.team_of(self.user) is None:
+                return
+            if room.race_id != self.room_race:
+                self.room_race, self.room_seq, self.pred_cache = room.race_id, 0, {}
+                out.append(self._room_init(room))
+            if room.seq != self.room_seq:
+                msg = room.state_for(self.user, self.room_seq)
+                self.room_seq = room.seq
+                msg["predictions"] = [p for p in (self._prediction(c, room.engine) for c in room.engine.cars
+                                                  if c.driver.team == room.team_of(self.user)) if p]
+                out.append(msg)
+        for m in out:
+            await self.ws.send_text(json.dumps(m))
+
+    def _room_init(self, room) -> dict:
+        p = room.players[self.user.id]
+        e = room.engine
+        return {
+            "type": "init", "track": e.track.to_json(), "team": p["team"], "laps": e.cfg.laps, "seed": room.seed,
+            "season": {"id": p["season_id"], "round": room.round_no, "rounds": ROUNDS, "league": room.league_id},
+            "can_command": True, "host": self.user.id == room.host_id,
+            "compounds": {k: {"name": c.name, "color": c.color} for k, c in COMPOUNDS.items()},
+        }
+
+    async def _handle_room(self, cmd) -> None:
+        if isinstance(cmd, LobbyCmd):
+            self._leave_room()
+            self.engine = None
+            room = league_race.room_for(cmd.league)
+            if room.info(self.user) is None:               # members only, same answer as a missing league
+                league_race.release(room)
+                return await self._error("League not found")
+            room.join(self.user)
+            self.room, self.room_version, self.room_race, self.room_seq = room, -1, 0, 0
+            return await self._room_tick()
+        if self.room is None:
+            return await self._error("Open a league lobby first")
+        if isinstance(cmd, ReadyCmd):
+            try:
+                self.room.set_ready(self.user, cmd.ready, dict(cmd.tyres or {}))
+            except league_race.RoomError as e:
+                return await self._error(str(e))
+            return await self._room_tick()
+        if isinstance(cmd, SpeedCmd):
+            err = self.room.command(self.user, "speed", value=cmd.value)
+        elif isinstance(cmd, PauseCmd):
+            err = self.room.command(self.user, "pause", paused=cmd.paused)
+        elif isinstance(cmd, PitCmd):
+            err = self.room.command(self.user, "pit", driver=cmd.driver, compound=cmd.compound)
+        else:
+            err = self.room.command(self.user, "mode", driver=cmd.driver, mode=cmd.mode)
+        if err:
+            await self._error(err)
 
     async def _receive(self) -> None:
         while True:
@@ -166,7 +247,10 @@ class RaceSession:
             await self._handle(cmd)
 
     async def _handle(self, cmd) -> None:
+        if isinstance(cmd, (LobbyCmd, ReadyCmd)) or (self.room is not None and not isinstance(cmd, StartCmd)):
+            return await self._handle_room(cmd)
         if isinstance(cmd, StartCmd):
+            self._leave_room()
             if cmd.season is not None:
                 career = None
                 with Session(db_engine) as s:
@@ -178,6 +262,8 @@ class RaceSession:
                             season = None                                 # only the career's current season
                 if season is None:
                     return await self._error("Season not found")
+                if season.league_id is not None:
+                    return await self._error("League rounds are raced together: open the league and press Race")
                 if season.finished:
                     return await self._error("That season is over")
                 if self.user.role not in (Role.principal, Role.admin):
@@ -257,13 +343,14 @@ class RaceSession:
                                            if c.driver.team == self.team) if p]
         await self.ws.send_text(json.dumps(snap))
 
-    def _prediction(self, car) -> dict | None:
+    def _prediction(self, car, engine: RaceEngine | None = None) -> dict | None:
+        engine = engine or self.engine
         key = (car.lap, car.tyre, round(car.wear, 1), tuple(sorted(car.used)), car.running,
-               round(self.engine.weather.wetness, 2))
+               round(engine.weather.wetness, 2))
         cached = self.pred_cache.get(car.code)
         if cached and cached[0] == key:
             return cached[1]
-        pred = self.engine.predicted_plan(car.code)
+        pred = engine.predicted_plan(car.code)
         self.pred_cache[car.code] = (key, pred)
         return pred
 

@@ -176,7 +176,8 @@ async function init() {
   $("backToMenuBtn").addEventListener("click", () => { $("startDialog").close(); openMenu(); });
   $("startForm").addEventListener("submit", (e) => { e.preventDefault(); startRace(); });
   $("againBtn").addEventListener("click", () => setTimeout(() => {
-    if (S.seasonRace && S.seasonRace.career) openHQ();
+    if (S.seasonRace && S.seasonRace.league) openLeagues(S.seasonRace.league);
+    else if (S.seasonRace && S.seasonRace.career) openHQ();
     else openStart(S.seasonRace ? "season" : "quick");
   }, 0));
   $("hqBtn").addEventListener("click", openHQ);
@@ -193,7 +194,9 @@ async function init() {
   $("resultStandingsBtn").addEventListener("click", () => { $("resultDialog").close(); openStandings(); });
   $("nextRoundBtn").addEventListener("click", () => {
     $("standingsDialog").close();
-    if (S.mode === "career") openHQ(); else openStart("season");
+    if (S.mode === "career") openHQ();
+    else if (S.season && S.season.season.league_id) openLeagues(S.season.season.league_id);
+    else openStart("season");
   });
   $("standingsSeg").addEventListener("click", (e) => {
     const v = e.target.dataset && e.target.dataset.v;
@@ -339,11 +342,16 @@ function onMessage(m) {
     S.track = prepTrack(m.track); S.trackCache = null;
     S.team = m.team; S.compounds = m.compounds; S.canCommand = m.can_command;
     S.seasonRace = m.season || null;
+    S.isHost = m.host !== false;            // in a league race only the owner sets speed and pause
+    if ($("lobbyDialog").open) $("lobbyDialog").close();
+    if ($("leagueDialog").open) $("leagueDialog").close();
     S.engPrev = null;
     Sound.startLights();
     $("trackName").dataset.round = S.seasonRace ? `Round ${S.seasonRace.round}/${S.seasonRace.rounds} · ` : "";
     S.disp.clear(); S.laps.clear(); S.charted.clear(); S.fastest = null; S.resultShown = false;
-    S.paused = false; $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = false;
+    S.paused = false; $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = !S.isHost;
+    for (const b of $("speedSeg").children) b.disabled = !S.isHost;
+    $("speedSeg").title = S.isHost ? "" : "The league owner controls the race speed";
     $("log").replaceChildren();
     $("trackName").textContent = `${$("trackName").dataset.round}${m.track.name} · ${(m.track.length_m / 1000).toFixed(2)} km`;
     const t = S.setup.teams.find((x) => x.id === m.team);
@@ -351,6 +359,10 @@ function onMessage(m) {
     resetChart();
   } else if (m.type === "state") {
     onState(m);
+  } else if (m.type === "lobby") {
+    renderLobby(m);
+  } else if (m.type === "error" && $("lobbyDialog").open) {
+    $("lobbyError").textContent = m.detail;
   } else if (m.type === "error") {
     addLog({ lap: S.state ? S.state.lap : "", kind: "dnf", text: `Server: ${m.detail}` });
   }
@@ -364,6 +376,7 @@ function onState(st) {
     if (st.cars[0]) S.charted.add(st.cars[0].code);
   }
   setSpeed(st.speed);
+  if (!S.isHost && st.paused !== S.paused) { S.paused = st.paused; $("pauseBtn").textContent = st.paused ? "Paused" : "Pause"; }
   st.laps.forEach((l) => {
     if (!S.laps.has(l.code)) S.laps.set(l.code, []);
     S.laps.get(l.code).push(l);
@@ -445,6 +458,7 @@ function renderTower(st) {
     });
     const bar = el("td", "teambar"); const i = el("i"); i.style.background = c.color; bar.append(i);
     const who = el("td"); who.append(el("span", "code", c.code));
+    if (c.player && !c.controlled) who.append(el("span", "badge player", c.player));   // a friend's car
     if (c.in_pit) who.append(el("span", "badge pit", "PIT"));
     else if (c.pit_request) who.append(el("span", "badge box", "BOX"));
     const gapTxt = S.gapMode === "gap" ? c.gap : (c.pos === 1 ? "INTERVAL" : c.interval);
@@ -570,7 +584,7 @@ async function showResults(st) {
   $("resultLede").textContent = `Your team: ${mine}. Winner: ${st.cars[0].name}.`;
   const season = S.seasonRace;
   $("resultStandingsBtn").hidden = !season;
-  $("againBtn").textContent = season && season.career ? "Team HQ"
+  $("againBtn").textContent = season && season.league ? "League table" : season && season.career ? "Team HQ"
     : season && season.round < season.rounds ? "Next round" : "New race";
   if (season) {
     const pts = st.cars.filter((c) => c.controlled).reduce((a, c) => a + racePoints(c), 0);
@@ -633,8 +647,11 @@ function renderSeasonBox() {
     text.append(el("b", null, sz.league_id ? `League season with ${teamName(sz.team)}` : `Season with ${teamName(sz.team)}`),
       document.createTextNode(` · round ${next} of ${ROUNDS()} at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · random weather` +
         (mine ? ` · teams' championship P${mine.pos} on ${mine.points} pts` : "")));
-    const go = el("button", "btn primary", `Start round ${next}`); go.type = "button";
-    go.addEventListener("click", () => startSeasonRound(sz.id));
+    const go = el("button", "btn primary", sz.league_id ? "Race lobby" : `Start round ${next}`); go.type = "button";
+    go.addEventListener("click", () => {
+      if (sz.league_id) { $("startDialog").close(); openLobby(sz.league_id); }   // league rounds are raced together
+      else startSeasonRound(sz.id);
+    });
     const table = el("button", "btn", "Standings"); table.type = "button";
     table.addEventListener("click", () => { $("startDialog").close(); openStandings(); });
     const quit = el("button", "btn ghost danger", "Abandon season"); quit.type = "button";

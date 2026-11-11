@@ -28,9 +28,11 @@ PASSWORD = "correct-horse-battery"
 def fresh_db():
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
+    engine.dispose()       # Postgres: pooled connections cache the old enum type ids, so start fresh
     from server import routes
     routes._lockout.failures.clear()          # each test starts with no failed-login history
     routes._lockout.locked_until.clear()
+    routes._league_join.hits.clear()          # user ids repeat across tests
     yield
 
 

@@ -267,9 +267,9 @@ def _league_call(fn, *args):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed")
     except repo.LeagueError as e:
         raise HTTPException(400, str(e))
-    except IntegrityError:            # two people grabbing the same name at once
+    except IntegrityError:            # two people grabbing the same name or team at once
         args[0].rollback()
-        raise HTTPException(400, "That name is taken in this league")
+        raise HTTPException(400, "That name or team was just taken in this league, pick another")
 
 
 @router.post("/leagues", response_model=LeagueOut, status_code=201)

@@ -246,3 +246,13 @@ dialog.menu { width: min(860px, calc(100vw - 32px)); padding: 32px; border-top: 
 #leagueDialog .btn.danger { color: #ff6b6b; }
 #leagueDialog .standings td, #leagueDialog .standings th { white-space: nowrap; }
 .table-scroll { overflow-x: auto; }
+.lobby-players { list-style: none; padding: 0; margin: 0 0 8px; display: flex; flex-direction: column; gap: 6px; }
+.lobby-players li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.lobby-players li .hint { margin: 0; }
+.lobby-players .lobby-state { margin-left: auto; font-size: 12px; color: var(--muted); }
+.lobby-players li.ready { border-color: var(--green); }
+.lobby-players li.ready .lobby-state { color: var(--green); font-weight: 700; }
+.lobby-players li.away { opacity: .6; }
+#lobbyTyres select { min-width: 180px; }
+#lobbyTyresBox:disabled { opacity: .6; }
+.badge.player { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); margin-left: 6px; font-size: 10px; }

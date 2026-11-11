@@ -32,6 +32,7 @@ class RaceConfig:
     laps: int = 30
     seed: int | None = None
     controlled_team: str | None = None   # team whose pit calls the player makes
+    controlled_teams: tuple[str, ...] = ()   # more player teams (league races: one per player)
     track_id: str = "harbourline"
     start_tyres: dict[str, str] | None = None   # player's starting compound per driver code
     weather: str = "dry"                        # dry, wet, changeable, showers or drying
@@ -123,7 +124,7 @@ class RaceEngine:
         best_cost = min(p.cost_s for p in by_start.values())
         for slot, d in enumerate(quali):
             car = Car(driver=d, grid=slot + 1)
-            car.controlled = d.team == self.cfg.controlled_team
+            car.controlled = d.team == self.cfg.controlled_team or d.team in self.cfg.controlled_teams
             chosen = (self.cfg.start_tyres or {}).get(d.code) if car.controlled else None
             car.weather_threshold = self.rng.uniform(0.6, 2.2)
             car.weather_look = self.rng.choice((0.5, 1.0, 1.5, 2.0))

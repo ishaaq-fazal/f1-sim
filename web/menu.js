@@ -3,7 +3,7 @@
 
 // ---------------------------------------------------------------- main menu
 function openMenu() {
-  for (const id of ["startDialog", "resultDialog", "standingsDialog", "hqDialog", "leagueDialog"]) {
+  for (const id of ["startDialog", "resultDialog", "standingsDialog", "hqDialog", "leagueDialog", "lobbyDialog"]) {
     if ($(id).open) $(id).close();
   }
   $("menuUser").textContent = S.user ? `Signed in as ${S.user.email}` : "";

@@ -98,10 +98,10 @@ async function showLeague(id) {
   }
   const me = d.table.find((x) => x.you);
   $("leagueRules").textContent = `${lg.laps} laps a race, ${d.rounds} rounds, one at every circuit. ` +
-    "Points are the F1 points your own team scores in your season (both cars). Ties go to the most wins, then 2nds, and so on. " +
-    "Everyone gets the same weather in each round. ★ runs the league.";
+    "Every round is one race with all the players on the same grid; it starts when everyone has pressed Ready in the lobby. " +
+    "Points are the F1 points your team scores (both cars). Ties go to the most wins, then 2nds, and so on. ★ runs the league.";
   $("leagueRaceBtn").hidden = !me || me.finished;
-  if (me && !me.finished) $("leagueRaceBtn").textContent = `Race round ${me.rounds_done + 1}`;
+  if (me && !me.finished) $("leagueRaceBtn").textContent = `Race lobby: round ${me.rounds_done + 1}`;
   $("leagueLeaveBtn").hidden = false;
   $("leagueDeleteBtn").hidden = !lg.is_owner;
   $("leagueBackBtn").textContent = "All leagues";
@@ -129,14 +129,108 @@ async function joinLeague() {
   await showLeague(lg.id);
 }
 
-// Racing a league round is a normal season round: the season screen, pinned to the league's season.
+// League rounds are one shared race: open the lobby, pick tyres, press Ready. The server starts
+// the race when every player is ready and sends "init" to everyone at once.
 async function raceLeagueRound() {
   const lg = S.league && S.league.league;
   if (!lg) return;
   S.focusSeason = lg.your_season_id;
   $("leagueDialog").close();
-  openStart("season");
+  openLobby(lg.id);
 }
+
+S.lobby = null;
+S.lobbyTyres = {};
+
+function openLobby(leagueId) {
+  S.lobby = null; S.lobbyTyres = {};
+  $("lobbyError").textContent = "";
+  $("lobbyPlayers").replaceChildren(el("li", "hint", "Connecting…"));
+  $("lobbyForecast").hidden = true;
+  $("lobbyTyres").replaceChildren();
+  $("lobbyReadyBtn").disabled = true;
+  if (!$("lobbyDialog").open) $("lobbyDialog").showModal();
+  connect(() => send({ type: "lobby", league: leagueId }));
+}
+
+function leaveLobby() {
+  if (S.ws) { S.ws.close(); S.ws = null; }      // closing the connection takes you out of the lobby
+  S.lobby = null;
+}
+
+function renderLobby(m) {
+  const first = !S.lobby || S.lobby.league !== m.league || S.lobby.round !== m.round;
+  S.lobby = m;
+  if (!$("lobbyDialog").open) return;
+  const me = m.players.find((p) => p.you);
+  $("lobbyTitle").textContent = `${m.name} · round ${m.round}`;
+  $("lobbyLede").textContent = m.track
+    ? `Round ${m.round} of ${m.rounds} at ${trackName(m.track)}, ${m.laps} laps. You race ${me ? teamName(me.team) : ""}.`
+    : "This league's season is over.";
+  const list = $("lobbyPlayers");
+  list.replaceChildren(...m.players.map((p) => {
+    const li = el("li", p.ready ? "ready" : p.online ? "online" : "away");
+    const sw = el("span", "team-sw"); sw.style.background = teamColor(p.team);
+    li.append(sw, el("b", null, p.nickname + (p.you ? " (you)" : "")), el("span", "hint", teamName(p.team)),
+      el("span", "lobby-state", p.ready ? "Ready" : p.online ? "In the lobby" : "Not here yet"));
+    return li;
+  }));
+  const waiting = m.players.filter((p) => !p.ready).map((p) => p.nickname);
+  let status = m.blocker || (m.status === "racing" ? "This round is already racing." : "");
+  if (!status) status = waiting.length ? `Waiting for ${waiting.join(", ")}.` : "Everyone's ready: lights out!";
+  $("lobbyRules").textContent = "Everyone races on one grid at the same time, each commanding their own team. " +
+    "The race starts as soon as every player is ready. The league owner controls the race speed and pause. " + status;
+  const ready = !!(me && me.ready);
+  $("lobbyReadyBtn").textContent = ready ? "Not ready" : "Ready";
+  $("lobbyReadyBtn").disabled = !me || !!m.blocker || m.status === "racing";
+  $("lobbyTyresBox").disabled = ready;
+  if (first && me) {
+    buildLobbyTyres(me.team);
+    if (m.your_season && m.track) lobbyForecast(m.your_season);
+  }
+}
+
+function buildLobbyTyres(teamId) {
+  const team = S.setup.teams.find((t) => t.id === teamId);
+  $("lobbyTyres").replaceChildren(...team.drivers.map((d) => {
+    const row = el("div", "tyre-row");
+    row.append(el("span", "who", `${d.name} (${d.code})`));
+    const sel = el("select");
+    sel.append(new Option("Auto (strategy model)", ""));
+    for (const k of ["S", "M", "H", "I", "W"]) sel.append(new Option(COMPOUND_INFO[k][0], k));
+    sel.value = S.lobbyTyres[d.code] || "";
+    sel.addEventListener("change", () => { if (sel.value) S.lobbyTyres[d.code] = sel.value; else delete S.lobbyTyres[d.code]; });
+    row.append(sel);
+    return row;
+  }));
+}
+
+async function lobbyForecast(seasonId) {
+  const r = await api(`/api/seasons/${seasonId}/next`);
+  if (!r.ok) return;
+  const f = (await r.json()).forecast;
+  const box = $("lobbyForecast");
+  const head = el("div", "fc-head");
+  head.append(el("b", null, "Forecast"),
+    el("span", `fc-summary ${f.wet_start ? "wet" : f.rain_chance >= 45 ? "maybe" : "dry"}`, f.summary));
+  box.replaceChildren(head, el("div", "fc-row", `Chance of rain during the race: ${f.rain_chance}% · track ${Math.round(f.track_wetness * 100)}% wet`));
+  box.hidden = false;
+}
+
+$("lobbyReadyBtn").addEventListener("click", () => {
+  const me = S.lobby && S.lobby.players.find((p) => p.you);
+  if (!me) return;
+  $("lobbyError").textContent = "";
+  const msg = { type: "ready", ready: !me.ready };
+  if (!me.ready && Object.keys(S.lobbyTyres).length) msg.tyres = { ...S.lobbyTyres };
+  send(msg);
+});
+$("lobbyBackBtn").addEventListener("click", () => {
+  const id = S.lobby && S.lobby.league;
+  leaveLobby(); $("lobbyDialog").close();
+  if (id) openLeagues(id); else openMenu();
+});
+$("lobbyDialog").addEventListener("cancel", (e) => { e.preventDefault(); $("lobbyBackBtn").click(); });
 
 $("newLeagueBtn").addEventListener("click", createLeague);
 $("joinBtn").addEventListener("click", joinLeague);

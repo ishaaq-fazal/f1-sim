@@ -101,12 +101,14 @@ class League(SQLModel, table=True):
 class LeagueMember(SQLModel, table=True):
     """One user's entry in a league: the season they run for it and the name others see
     (never their email)."""
-    __table_args__ = (UniqueConstraint("league_id", "user_id"), UniqueConstraint("league_id", "nickname"))
+    __table_args__ = (UniqueConstraint("league_id", "user_id"), UniqueConstraint("league_id", "nickname"),
+                      UniqueConstraint("league_id", "team"))       # one team per player: they share a grid
     id: int | None = Field(default=None, primary_key=True)
     league_id: int = Field(foreign_key="league.id", index=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     season_id: int = Field(foreign_key="season.id", index=True)
     nickname: str = Field(max_length=20)
+    team: str = Field(default="", max_length=20)
     joined_at: datetime = Field(default_factory=_now)
 
 
@@ -160,6 +162,13 @@ def _upgrade() -> None:
     if cols is not None and "league_id" not in cols:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE season ADD COLUMN league_id INTEGER REFERENCES league(id)"))
+    insp = inspect(engine)
+    cols = {c["name"] for c in insp.get_columns("leaguemember")} if insp.has_table("leaguemember") else None
+    if cols is not None and "team" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE leaguemember ADD COLUMN team VARCHAR(20) NOT NULL DEFAULT ''"))
+            conn.execute(text("UPDATE leaguemember SET team = (SELECT season.team FROM season "
+                              "WHERE season.id = leaguemember.season_id)"))
 
 
 def ping() -> bool:

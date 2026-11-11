@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import secrets
 
+from sim import TEAMS
 from sim import career as career_rules
 from sim.season import ROUNDS, points_for, standings, track_for_round
 
@@ -339,13 +340,20 @@ def _join(s: Session, actor: User, league: League, team: str, nickname: str) -> 
         raise LeagueError("That league is full")
     if any(m.nickname.casefold() == nickname.casefold() for m in members):
         raise LeagueError("That name is taken in this league")
+    seasons = [s.get(Season, m.season_id) for m in members]
+    if any(x is not None and x.rounds_done > 0 for x in seasons):
+        raise LeagueError("That league has already started racing, so it can't take new players")
+    taken = {x.team for x in seasons if x is not None}
+    if team in taken:
+        free = [name for tid, name, *_ in TEAMS if tid not in taken]
+        raise LeagueError("That team is taken in this league. Free teams: " + ", ".join(free))
     seasons = s.exec(select(func.count()).select_from(Season).where(Season.owner_id == actor.id)).one()
     if seasons >= MAX_SEASONS_PER_USER:
         raise LeagueError("Too many seasons: delete an old one first")
     season = Season(owner_id=actor.id, league_id=league.id, team=team, laps=league.laps, weather="dry")
     s.add(season)
     s.flush()
-    member = LeagueMember(league_id=league.id, user_id=actor.id, season_id=season.id, nickname=nickname)
+    member = LeagueMember(league_id=league.id, user_id=actor.id, season_id=season.id, nickname=nickname, team=team)
     s.add(member)
     return member
 
@@ -406,6 +414,25 @@ def league_size(s: Session, me: LeagueMember) -> int:
     """Member count for a league, given the asker's own membership row (so only members can ask)."""
     return s.exec(select(func.count()).select_from(LeagueMember)
                   .where(LeagueMember.league_id == me.league_id)).one()
+
+
+def league_lobby(s: Session, actor: User, league_id: int) -> dict | None:
+    """What the race lobby needs: each member's user id, nickname, team and season. Server-side only
+    (user ids never go to browsers). None if the actor isn't a member."""
+    if _membership(s, actor, league_id) is None:
+        return None
+    league = s.get(League, league_id)
+    players = []
+    for m in s.exec(select(LeagueMember).where(LeagueMember.league_id == league_id)
+                    .order_by(LeagueMember.joined_at, LeagueMember.id)).all():
+        season = s.exec(select(Season).where(Season.id == m.season_id, Season.owner_id == m.user_id,
+                                             Season.league_id == league_id)).first()
+        if season is not None:
+            players.append({"user_id": m.user_id, "nickname": m.nickname, "team": season.team,
+                            "season_id": season.id, "rounds_done": season.rounds_done,
+                            "finished": season.finished})
+    return {"id": league.id, "name": league.name, "laps": league.laps, "owner_id": league.owner_id,
+            "players": players}
 
 
 def league_table(s: Session, actor: User, league_id: int) -> list[dict] | None:

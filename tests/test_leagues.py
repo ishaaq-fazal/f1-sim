@@ -88,16 +88,6 @@ def test_league_rounds_share_one_seed_so_everyone_races_the_same_conditions(alic
     assert fa == fb
 
 
-def test_ws_league_round_uses_the_shared_seed(alice, bob):
-    lg = create(alice)
-    with Session(engine) as s:
-        expected = repo.season_round_seed(s.get(Season, lg["your_season_id"]), 1)
-    with alice.websocket_connect("/ws/race", headers=ORIGIN) as ws:
-        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "season": lg["your_season_id"]}))
-        init = ws.receive_json()
-        assert init["type"] == "init" and init["seed"] == expected
-
-
 def test_join_rules(alice, bob, carol):
     lg = create(alice)
     assert join(bob, "ZZZZZZZZ").status_code == 400                       # no such code
@@ -106,9 +96,18 @@ def test_join_rules(alice, bob, carol):
     assert join(bob, lg["code"], nickname="Again").status_code == 400      # already in
     assert join(alice, lg["code"], nickname="Twice").status_code == 400
     assert join(carol, lg["code"], team="nobody", nickname="Caz").status_code == 400
+    r = join(carol, lg["code"], team="vantage", nickname="Caz")             # bob already runs Vantage
+    assert r.status_code == 400 and "team is taken" in r.json()["detail"] and "Vantage" not in r.json()["detail"]
     with Session(engine) as s:
         assert len(s.exec(select(LeagueMember)).all()) == 2
         assert len(s.exec(select(Season)).all()) == 2                     # failed joins left no seasons
+
+
+def test_no_new_players_once_a_league_has_raced(alice, bob):
+    lg = create(alice)
+    finish_round("alice@example.com", lg["your_season_id"])
+    r = join(bob, lg["code"])
+    assert r.status_code == 400 and "already started" in r.json()["detail"]
 
 
 @pytest.mark.parametrize("body", [
@@ -159,7 +158,7 @@ def test_league_table_never_shows_emails_or_user_ids(alice, bob):
 def test_only_the_owner_removes_members_or_deletes(alice, bob, carol):
     lg = create(alice)
     join(bob, lg["code"])
-    join(carol, lg["code"], nickname="Caz")
+    join(carol, lg["code"], team="halcyon", nickname="Caz")
     with Session(engine) as s:
         ids = {m.nickname: m.id for m in s.exec(select(LeagueMember)).all()}
     # bob (a member, not the owner) can't remove carol or delete the league
