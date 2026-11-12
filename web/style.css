@@ -256,3 +256,6 @@ dialog.menu { width: min(860px, calc(100vw - 32px)); padding: 32px; border-top: 
 #lobbyTyres select { min-width: 180px; }
 #lobbyTyresBox:disabled { opacity: .6; }
 .badge.player { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); margin-left: 6px; font-size: 10px; }
+.quali-seg { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
+.quali-seg .boxbtn { padding: 3px 8px; font-size: 12px; }
+#qualiDialog { width: min(560px, calc(100vw - 32px)); }

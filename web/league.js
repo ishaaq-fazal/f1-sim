@@ -141,9 +141,10 @@ async function raceLeagueRound() {
 
 S.lobby = null;
 S.lobbyTyres = {};
+S.lobbyQuali = {};
 
 function openLobby(leagueId) {
-  S.lobby = null; S.lobbyTyres = {};
+  S.lobby = null; S.lobbyTyres = {}; S.lobbyQuali = {};
   $("lobbyError").textContent = "";
   $("lobbyPlayers").replaceChildren(el("li", "hint", "Connecting…"));
   $("lobbyForecast").hidden = true;
@@ -200,7 +201,7 @@ function buildLobbyTyres(teamId) {
     for (const k of ["S", "M", "H", "I", "W"]) sel.append(new Option(COMPOUND_INFO[k][0], k));
     sel.value = S.lobbyTyres[d.code] || "";
     sel.addEventListener("change", () => { if (sel.value) S.lobbyTyres[d.code] = sel.value; else delete S.lobbyTyres[d.code]; });
-    row.append(sel);
+    row.append(sel, qualiButtons(d.code, S.lobbyQuali));
     return row;
   }));
 }
@@ -223,6 +224,7 @@ $("lobbyReadyBtn").addEventListener("click", () => {
   $("lobbyError").textContent = "";
   const msg = { type: "ready", ready: !me.ready };
   if (!me.ready && Object.keys(S.lobbyTyres).length) msg.tyres = { ...S.lobbyTyres };
+  if (!me.ready && Object.keys(S.lobbyQuali).length) msg.quali = { ...S.lobbyQuali };
   send(msg);
 });
 $("lobbyBackBtn").addEventListener("click", () => {

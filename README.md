@@ -16,6 +16,13 @@ The race engine is Python; the browser draws it.
   Riverside Ring (long straights, easy to pass), Glacier Pass (longest lap, very low wear),
   Neon Bay Street Circuit (night street race, hard to pass), Highmoor Circuit (very fast, high wear),
   Cedar Vale (short and twisty, almost no passing) and Saltmarsh Coast (two big straights, coarse surface).
+* **Qualifying**: a one-lap shootout on Softs (or wet tyres in the rain) sets the grid before
+  every race. For each of your cars you choose **Push** (quicker, bigger risk of a mistake),
+  **Normal** or **Play safe** (slower, rarely goes wrong). Rain makes every lap less predictable.
+  In leagues everyone's calls go into one shared session before the race.
+* **Balanced teams**: the fastest and slowest cars are under half a second a lap apart, and each
+  race rolls a little race-day form for every team and driver, so a midfield car with a good
+  strategy can fight for podiums and the backmarkers can score points.
 * **Starting tyres**: start each of your cars on Soft, Medium or Hard, or let the model choose.
   The two-compound rule still applies (+10 s if you only use one).
 * **Main menu, tutorial and sound**: a main menu (Quick race, Season, Career, How to play), a

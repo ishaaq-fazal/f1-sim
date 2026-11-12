@@ -25,6 +25,19 @@ MIN_GAP_S = 0.22          # closest a car can follow without passing
 STANDING_START_S = 2.8
 GRID_SLOT_M = 8.0
 MAX_SUBSTEP_S = 0.25
+# Race-day form: how well each car suits this circuit and how sharp each driver is today.
+# Drawn once per race, so it doesn't average out over the laps like lap-to-lap noise does.
+TEAM_FORM_SD = 0.15       # s/lap, shared by both cars of a team
+DRIVER_FORM_SD = 0.08     # s/lap, per driver
+# Qualifying: one flying lap each on low fuel and the fastest tyre for the conditions.
+QUALI_NOISE_S = 0.22      # lap noise for an average driver (scaled by their consistency)
+QUALI_MISTAKE = 0.04      # chance of a scruffy lap on a normal run (more in the wet)
+# Qualifying approach: (lap time offset s, noise multiplier, mistake chance multiplier).
+QUALI_MODES: dict[str, tuple[float, float, float]] = {
+    "safe": (0.15, 0.6, 0.25),
+    "normal": (0.0, 1.0, 1.0),
+    "push": (-0.25, 1.3, 3.0),
+}
 
 
 @dataclass
@@ -35,6 +48,7 @@ class RaceConfig:
     controlled_teams: tuple[str, ...] = ()   # more player teams (league races: one per player)
     track_id: str = "harbourline"
     start_tyres: dict[str, str] | None = None   # player's starting compound per driver code
+    quali_modes: dict[str, str] | None = None   # player's qualifying approach per driver: safe, normal, push
     weather: str = "dry"                        # dry, wet, changeable, showers or drying
     vsc_chance_per_lap: float = 0.025
     dnf_chance_per_lap: float = 0.0008
@@ -78,6 +92,7 @@ class Car:
     finish_t: float = 0.0
     retired: bool = False
     penalty_s: float = 0.0
+    form_s: float = 0.0           # race-day form, s/lap (negative = faster)
 
     @property
     def code(self) -> str:
@@ -111,19 +126,21 @@ class RaceEngine:
         self.events: list[dict] = []
         self.new_laps: list[dict] = []
         self.cars: list[Car] = []
+        self.qualifying: list[dict] = []
         self._setup(drivers or default_grid())
 
     # ----------------------------------------------------------------- setup
     def _setup(self, drivers: list[Driver]) -> None:
-        # Qualifying: pace plus noise sets the grid.
-        quali = sorted(drivers, key=lambda d: d.pace_s + self.rng.gauss(0, 0.18))
+        team_form = {t: self.rng.gauss(0, TEAM_FORM_SD) for t in sorted({d.team for d in drivers})}
+        form = {d.code: team_form[d.team] + self.rng.gauss(0, DRIVER_FORM_SD) for d in drivers}
+        quali = self._qualify(drivers, form)
         # Best plan for each possible starting compound on this circuit.
         by_start = {c: best_plan(self.cfg.laps, self.track.pit_loss_s, wear_mult=self.track.wear_mult,
                                  starts=[c]) for c in DRY}
         wet_start = ideal_type(self.weather.wetness)
         best_cost = min(p.cost_s for p in by_start.values())
         for slot, d in enumerate(quali):
-            car = Car(driver=d, grid=slot + 1)
+            car = Car(driver=d, grid=slot + 1, form_s=form[d.code])
             car.controlled = d.team == self.cfg.controlled_team or d.team in self.cfg.controlled_teams
             chosen = (self.cfg.start_tyres or {}).get(d.code) if car.controlled else None
             car.weather_threshold = self.rng.uniform(0.6, 2.2)
@@ -151,9 +168,40 @@ class RaceEngine:
             car.frac = -(slot * GRID_SLOT_M + 6.0) / self.track.length_m
             car.lap_target = self._lap_time(car)
             self.cars.append(car)
+        q = self.qualifying
+        self._event("quali", f"Pole position: {q[0]['code']} ({q[0]['time']:.3f}), "
+                    f"{q[1]['code']} +{q[1]['gap']:.3f}, {q[2]['code']} +{q[2]['gap']:.3f}", q[0]["code"])
+        for row in q:
+            if row["mistake"]:
+                self._event("quali", f"{row['code']} made a mistake on their qualifying lap: P{row['pos']}", row["code"])
         self._event("start", f"Lights out! {self.cfg.laps} laps of {self.track.name}."
                     + {"dry": "", "wet": " It's raining: a wet race.", "changeable": " Changeable weather expected.",
                        "showers": " Showers expected on and off.", "drying": " Wet start, but it should dry out."}[self.cfg.weather])
+
+    def _qualify(self, drivers: list[Driver], form: dict[str, float]) -> list[Driver]:
+        """One flying lap each sets the grid. Pushing is quicker but riskier; playing safe is
+        slower but rarely goes wrong. Rain makes every lap less predictable."""
+        w = self.weather.wetness
+        ideal = ideal_type(w)
+        tyre = "S" if ideal == "dry" else ideal
+        teams = set(self.cfg.controlled_teams) | ({self.cfg.controlled_team} if self.cfg.controlled_team else set())
+        laps = []
+        for d in drivers:
+            mode = (self.cfg.quali_modes or {}).get(d.code, "normal") if d.team in teams else "normal"
+            offset, noise, risk = QUALI_MODES.get(mode, QUALI_MODES["normal"])
+            t = (self.track.base_lap_s + d.pace_s + form[d.code] + offset
+                 + COMPOUNDS[tyre].delta(0) + 6.0 * w + condition_delta(tyre, w)
+                 + self.rng.gauss(0, QUALI_NOISE_S * noise * (d.consistency_s / 0.24) * (1 + 2 * w)))
+            mistake = self.rng.random() < QUALI_MISTAKE * risk * (1 + 3 * w)
+            if mistake:
+                t += self.rng.uniform(0.8, 3.0)
+            laps.append((t, d, mode, mistake))
+        laps.sort(key=lambda x: x[0])
+        pole = laps[0][0]
+        self.qualifying = [{"pos": i + 1, "code": d.code, "name": d.name, "team": d.team, "color": d.color,
+                            "time": round(t, 3), "gap": round(t - pole, 3), "tyre": tyre, "mode": mode,
+                            "mistake": mistake} for i, (t, d, mode, mistake) in enumerate(laps)]
+        return [d for _, d, _, _ in laps]
 
     # ------------------------------------------------------------- modelling
     def _lap_time(self, car: Car) -> float:
@@ -161,7 +209,7 @@ class RaceEngine:
         mode_s, _ = PACE_MODES[car.mode]
         # Wetness over the coming lap: average of now and one lap from now.
         w = (self.weather.wetness + self.weather.wetness_at(self.t, self.t + self.track.base_lap_s)) / 2
-        t = (self.track.base_lap_s + d.pace_s + COMPOUNDS[car.tyre].delta(car.wear)
+        t = (self.track.base_lap_s + d.pace_s + car.form_s + COMPOUNDS[car.tyre].delta(car.wear)
              + car.fuel * FUEL_S_PER_KG + mode_s + self.rng.gauss(0, d.consistency_s * (1 + w))
              + 6.0 * w + condition_delta(car.tyre, w))
         if car.lap == 0:

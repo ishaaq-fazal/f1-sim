@@ -15,6 +15,7 @@ class _Msg(BaseModel):
 
 TrackId = Annotated[str, Field(pattern=r"^[a-z]{2,20}$")]
 Compound = Literal["S", "M", "H", "I", "W"]
+QualiMode = Literal["safe", "normal", "push"]
 
 
 class StartCmd(_Msg):
@@ -26,6 +27,8 @@ class StartCmd(_Msg):
     weather: Literal["dry", "wet", "changeable", "showers", "drying"] = "dry"
     # Starting tyre for each of your two cars, keyed by driver code.
     tyres: dict[DriverCode, Compound] | None = Field(default=None, max_length=2)
+    # Qualifying approach for each of your two cars: push (quicker, riskier) or play safe.
+    quali: dict[DriverCode, QualiMode] | None = Field(default=None, max_length=2)
     # Run the next round of one of your seasons. The season fixes the team, circuit, laps and weather.
     season: int | None = Field(default=None, ge=1, le=2**31 - 1)
 
@@ -64,6 +67,7 @@ class ReadyCmd(_Msg):
     type: Literal["ready"]
     ready: bool
     tyres: dict[DriverCode, Compound] | None = Field(default=None, max_length=2)
+    quali: dict[DriverCode, QualiMode] | None = Field(default=None, max_length=2)
 
 
 Command = Annotated[Union[StartCmd, SpeedCmd, PauseCmd, PitCmd, ModeCmd, LobbyCmd, ReadyCmd],

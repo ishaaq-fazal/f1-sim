@@ -24,7 +24,7 @@ AREAS = {
     "tyres": "Suspension: gentler on the tyres",
     "reliability": "Reliability: fewer mechanical retirements",
 }
-PACE_PER_LEVEL_S = 0.06          # power and aero, each level, seconds per lap
+PACE_PER_LEVEL_S = 0.03          # power and aero, each level, seconds per lap
 TYRE_WEAR_PER_LEVEL = 0.97       # wear multiplier per level (compounds)
 DNF_PER_LEVEL = 0.85             # breakdown chance multiplier per level
 MAX_LEVEL = 15
@@ -214,9 +214,9 @@ def end_season(state: dict, team_position: int, team_points: int, champion: str,
         d["years"] -= 1
     rng = random.Random(seed)
     for t in state["ai_dev"]:
-        # Rivals develop 0.1-0.35 s/lap a season; teams lower down find a little more.
+        # Rivals develop 0.05-0.18 s/lap a season; teams lower down find a little more.
         rank = [x[0] for x in TEAMS].index(t)
-        state["ai_dev"][t] = round(state["ai_dev"][t] + rng.uniform(0.10, 0.30) + 0.006 * rank, 3)
+        state["ai_dev"][t] = round(state["ai_dev"][t] + rng.uniform(0.05, 0.15) + 0.003 * rank, 3)
     # Unsigned drivers' form drifts a little between seasons.
     for d in state["market"]:
         d["delta"] = round(max(-0.2, min(0.3, d["delta"] + rng.gauss(0, 0.03))), 3)

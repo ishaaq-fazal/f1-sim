@@ -198,6 +198,7 @@ class RaceSession:
             "season": {"id": p["season_id"], "round": room.round_no, "rounds": ROUNDS, "league": room.league_id},
             "can_command": True, "host": self.user.id == room.host_id,
             "compounds": {k: {"name": c.name, "color": c.color} for k, c in COMPOUNDS.items()},
+            "qualifying": e.qualifying,
         }
 
     async def _handle_room(self, cmd) -> None:
@@ -215,7 +216,7 @@ class RaceSession:
             return await self._error("Open a league lobby first")
         if isinstance(cmd, ReadyCmd):
             try:
-                self.room.set_ready(self.user, cmd.ready, dict(cmd.tyres or {}))
+                self.room.set_ready(self.user, cmd.ready, dict(cmd.tyres or {}), dict(cmd.quali or {}))
             except league_race.RoomError as e:
                 return await self._error(str(e))
             return await self._room_tick()
@@ -297,11 +298,14 @@ class RaceSession:
             team_codes = {d.code for d in grid if d.team == cmd.team}
             if cmd.tyres and not set(cmd.tyres) <= team_codes:
                 return await self._error("Starting tyres can only be set for your own drivers")
+            if cmd.quali and not set(cmd.quali) <= team_codes:
+                return await self._error("Qualifying calls can only be made for your own drivers")
             self.team = cmd.team
             # Always record a seed so any race can be replayed exactly.
             self.seed = cmd.seed if cmd.seed is not None else secrets.randbelow(2**31)
             self.engine = RaceEngine(RaceConfig(laps=cmd.laps, seed=self.seed, controlled_team=cmd.team,
                                                 track_id=cmd.track, start_tyres=dict(cmd.tyres or {}),
+                                                quali_modes=dict(cmd.quali or {}),
                                                 weather=cmd.weather,
                                                 team_wear=self.career["wear"] if self.career else None,
                                                 team_dnf=self.career["dnf"] if self.career else None),
@@ -332,6 +336,7 @@ class RaceSession:
             "type": "init", "track": e.track.to_json(), "team": self.team, "laps": e.cfg.laps,
             "seed": self.seed, "season": self._season_json(), "can_command": self.user.role in (Role.principal, Role.admin),
             "compounds": {k: {"name": c.name, "color": c.color} for k, c in COMPOUNDS.items()},
+            "qualifying": e.qualifying,
         }))
         await self._send_state()
 

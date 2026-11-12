@@ -39,6 +39,7 @@ class LeagueRoom:
         self.version = 0                         # bumped whenever the lobby changes
         self.online: dict[int, int] = {}         # user id -> open connections
         self.ready: dict[int, dict[str, str]] = {}   # user id -> starting tyres
+        self.ready_quali: dict[int, dict[str, str]] = {}   # user id -> qualifying calls
         self.race_id = 0                         # bumped for each race started in this room
         self.engine: RaceEngine | None = None
         self.players: dict[int, dict] = {}       # user id -> lobby row, fixed when the race starts
@@ -75,6 +76,7 @@ class LeagueRoom:
             if n <= 0:
                 self.online.pop(user.id, None)
                 self.ready.pop(user.id, None)    # gone from the lobby: no longer ready
+                self.ready_quali.pop(user.id, None)
             else:
                 self.online[user.id] = n
             if not self.online and self.racing():
@@ -83,7 +85,7 @@ class LeagueRoom:
                 self._reset()
             self.version += 1
 
-    def set_ready(self, user: User, ready: bool, tyres: dict[str, str]) -> None:
+    def set_ready(self, user: User, ready: bool, tyres: dict[str, str], quali: dict[str, str] | None = None) -> None:
         if user.role not in (Role.principal, Role.admin):
             raise RoomError("Viewers can't race")
         info = self.info(user)
@@ -95,13 +97,17 @@ class LeagueRoom:
         own = {d.code for d in default_grid() if d.team == me["team"]}
         if not set(tyres) <= own:
             raise RoomError("Starting tyres can only be set for your own drivers")
+        if not set(quali or {}) <= own:
+            raise RoomError("Qualifying calls can only be made for your own drivers")
         with self.lock:
             if self.racing():
                 raise RoomError("This round is already racing")
             if ready:
                 self.ready[user.id] = dict(tyres)
+                self.ready_quali[user.id] = dict(quali or {})
             else:
                 self.ready.pop(user.id, None)
+                self.ready_quali.pop(user.id, None)
             self.version += 1
             self._maybe_start(info)
 
@@ -140,11 +146,14 @@ class LeagueRoom:
             season = repo.get_season(s, repo.user_by_id(s, lead["user_id"]), lead["season_id"])
             self.seed = repo.season_round_seed(season, self.round_no)
         tyres: dict[str, str] = {}
+        quali: dict[str, str] = {}
         for p in players:
             tyres.update(self.ready[p["user_id"]])
+            quali.update(self.ready_quali.get(p["user_id"], {}))
         self.engine = RaceEngine(RaceConfig(
             laps=info["laps"], seed=self.seed, controlled_teams=tuple(p["team"] for p in players),
-            track_id=track_for_round(self.round_no), start_tyres=tyres, weather=round_weather(self.seed)),
+            track_id=track_for_round(self.round_no), start_tyres=tyres, quali_modes=quali,
+            weather=round_weather(self.seed)),
             drivers=default_grid())
         self.players = {p["user_id"]: dict(p) for p in players}
         self.host_id = info["owner_id"]
@@ -153,6 +162,7 @@ class LeagueRoom:
         self.last_tick = time.monotonic()
         self.events, self.laps, self.seq = [], [], 0
         self.ready.clear()
+        self.ready_quali.clear()
         self._take_snapshot()
         self.version += 1
 

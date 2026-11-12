@@ -203,3 +203,23 @@ def test_menu_tutorial_and_sound_scripts_are_served_from_our_own_origin(client):
         assert r.status_code == 200 and "javascript" in r.headers["content-type"]
         assert ".innerHTML" not in r.text           # DOM text only ever set with textContent
     assert 'id="menuDialog"' in page and 'id="tour"' in page
+
+
+def test_ws_init_has_qualifying_and_quali_calls_are_own_drivers_only(client):
+    with client.websocket_connect("/ws/race", headers=ORIGIN) as ws:
+        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "seed": 1,
+                                 "quali": {"BRA": "push"}}))
+        assert next_of(ws, "error")["detail"] == "Qualifying calls can only be made for your own drivers"
+        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "seed": 1,
+                                 "quali": {"MAR": "push", "OKA": "sideways"}}))
+        assert next_of(ws, "error")["detail"] == "Invalid message"
+        ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "seed": 1,
+                                 "quali": {"MAR": "push", "OKA": "safe"}}))
+        init = next_of(ws, "init")
+        q = init["qualifying"]
+        assert len(q) == 20 and [r["pos"] for r in q] == list(range(1, 21))
+        modes = {r["code"]: r["mode"] for r in q}
+        assert modes["MAR"] == "push" and modes["OKA"] == "safe"
+        state = next_of(ws, "state")
+        grid = {c["code"]: c["grid"] for c in state["cars"]}
+        assert all(grid[r["code"]] == r["pos"] for r in q)

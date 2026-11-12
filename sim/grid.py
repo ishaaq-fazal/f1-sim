@@ -21,16 +21,16 @@ class Driver:
 
 # (team id, display name, colour, car pace)
 TEAMS = [
-    ("aurora", "Aurora Racing", "#ff8a00", -1.10),
-    ("vantage", "Vantage GP", "#2f8cff", -0.95),
-    ("crimson", "Crimson Arc", "#e8263f", -0.90),
-    ("verdant", "Verdant", "#1fbf6a", -0.55),
-    ("nimbus", "Nimbus Motorsport", "#a970ff", -0.35),
-    ("polaris", "Polaris", "#14c4b4", -0.20),
+    ("aurora", "Aurora Racing", "#ff8a00", -0.30),
+    ("vantage", "Vantage GP", "#2f8cff", -0.26),
+    ("crimson", "Crimson Arc", "#e8263f", -0.24),
+    ("verdant", "Verdant", "#1fbf6a", -0.15),
+    ("nimbus", "Nimbus Motorsport", "#a970ff", -0.10),
+    ("polaris", "Polaris", "#14c4b4", -0.05),
     ("solace", "Solace", "#ffd400", 0.00),
-    ("halcyon", "Halcyon", "#ff6fb5", 0.15),
-    ("ironforge", "Ironforge", "#9aa3ad", 0.35),
-    ("kestrel", "Kestrel", "#c9a464", 0.55),
+    ("halcyon", "Halcyon", "#ff6fb5", 0.04),
+    ("ironforge", "Ironforge", "#9aa3ad", 0.09),
+    ("kestrel", "Kestrel", "#c9a464", 0.14),
 ]
 
 # (code, name, team id, driver delta, consistency, racecraft)

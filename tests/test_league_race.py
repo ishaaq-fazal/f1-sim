@@ -208,3 +208,25 @@ def test_a_removed_member_is_dropped_from_the_lobby(league, alice, bob):
     wb.send_text(json.dumps({"type": "ready", "ready": True}))
     assert recv_error(wb) == "Open a league lobby first"
     close(wb)
+
+
+def test_ready_rejects_quali_calls_for_someone_elses_drivers(league, alice):
+    lg, _ = league
+    wa = open_lobby(alice, lg["id"])
+    recv(wa, "lobby")
+    wa.send_text(json.dumps({"type": "ready", "ready": True, "quali": {"BRA": "push"}}))
+    assert recv_error(wa) == "Qualifying calls can only be made for your own drivers"
+    close(wa)
+
+
+def test_shared_race_qualifies_everyone_with_each_players_calls(league, alice, bob):
+    lg, _ = league
+    wa, wb = open_lobby(alice, lg["id"]), open_lobby(bob, lg["id"])
+    recv(wa, "lobby"); recv(wb, "lobby")
+    wa.send_text(json.dumps({"type": "ready", "ready": True, "quali": {"MAR": "push"}}))
+    wb.send_text(json.dumps({"type": "ready", "ready": True, "quali": {"VEN": "safe"}}))
+    ia, ib = recv(wa, "init"), recv(wb, "init")
+    assert ia["qualifying"] == ib["qualifying"] and len(ia["qualifying"]) == 20     # one session for everyone
+    modes = {r["code"]: r["mode"] for r in ia["qualifying"]}
+    assert modes["MAR"] == "push" and modes["VEN"] == "safe" and modes["OKA"] == "normal"
+    close(wa, wb)

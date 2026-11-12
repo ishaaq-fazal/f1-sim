@@ -175,6 +175,7 @@ async function init() {
   $("newRaceBtn").addEventListener("click", () => openMenu());
   $("backToMenuBtn").addEventListener("click", () => { $("startDialog").close(); openMenu(); });
   $("startForm").addEventListener("submit", (e) => { e.preventDefault(); startRace(); });
+  $("qualiDialog").addEventListener("close", closeQualifying);
   $("againBtn").addEventListener("click", () => setTimeout(() => {
     if (S.seasonRace && S.seasonRace.league) openLeagues(S.seasonRace.league);
     else if (S.seasonRace && S.seasonRace.career) openHQ();
@@ -267,11 +268,39 @@ function selectedTrack() {
 }
 
 S.startTyres = {};
+S.quali = {};
+const QUALI_CALLS = [["safe", "Play safe", "Slower lap, but very unlikely to go wrong"],
+                     ["normal", "Normal", "A solid lap"],
+                     ["push", "Push", "Quicker lap, but a bigger risk of a mistake"]];
+
+// Qualifying call for one driver: play safe, normal or push. Stored in `store` by driver code.
+function qualiButtons(code, store) {
+  const wrap = el("span", "quali-seg");
+  wrap.append(el("span", "hint", "Quali:"));
+  const buttons = QUALI_CALLS.map(([k, name, tip]) => {
+    const b = el("button", "boxbtn", name); b.type = "button"; b.dataset.k = k; b.title = tip;
+    b.style.color = "#8b93a7"; b.style.borderColor = "#8b93a7";
+    return b;
+  });
+  const paint = () => buttons.forEach((b) => {
+    const on = b.dataset.k === (store[code] || "normal");
+    b.classList.toggle("on", on);
+    b.style.background = on ? b.style.borderColor : "transparent";
+  });
+  buttons.forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.k === "normal") delete store[code]; else store[code] = b.dataset.k;
+    paint();
+  }));
+  paint();
+  wrap.append(...buttons);
+  return wrap;
+}
+
 function buildTyrePicker() {
   const teamId = document.querySelector('input[name="team"]:checked').value;
   const team = S.setup.teams.find((t) => t.id === teamId);
   const drivers = S.career && S.career.team === teamId ? S.career.drivers : team.drivers;
-  S.startTyres = {};
+  S.startTyres = {}; S.quali = {};
   $("tyrePicker").replaceChildren(...drivers.map((d) => {
     const row = el("div", "tyre-row");
     row.append(el("span", "who", `${d.name} (${d.code})`));
@@ -295,7 +324,7 @@ function buildTyrePicker() {
       paint();
     }));
     paint();
-    row.append(...buttons);
+    row.append(...buttons, qualiButtons(d.code, S.quali));
     return row;
   }));
 }
@@ -308,6 +337,8 @@ function startRace() {
   const own = new Set(S.setup.teams.find((t) => t.id === team).drivers.map((d) => d.code));
   const tyres = Object.fromEntries(Object.entries(S.startTyres).filter(([c]) => own.has(c)));
   if (Object.keys(tyres).length) msg.tyres = tyres;
+  const quali = Object.fromEntries(Object.entries(S.quali).filter(([c]) => own.has(c)));
+  if (Object.keys(quali).length) msg.quali = quali;
   if (seedRaw !== "") msg.seed = Number(seedRaw);
   connect(() => {
     S.ws.send(JSON.stringify(msg));
@@ -357,6 +388,7 @@ function onMessage(m) {
     const t = S.setup.teams.find((x) => x.id === m.team);
     const chip = $("teamChip"); chip.textContent = t.name; chip.style.background = t.color; chip.style.color = "#000";
     resetChart();
+    if (m.qualifying && m.qualifying.length) showQualifying(m.qualifying);
   } else if (m.type === "state") {
     onState(m);
   } else if (m.type === "lobby") {
@@ -578,6 +610,32 @@ function addLog(ev) {
   while (log.children.length > 200) log.lastChild.remove();
 }
 
+// Qualifying result before the lights go out. The race waits (paused) until you start it;
+// in a league race only the owner can pause, so everyone else just reads the grid.
+function showQualifying(rows) {
+  const mine = rows.filter((r) => r.team === S.team);
+  const callName = Object.fromEntries(QUALI_CALLS.map(([k, n]) => [k, n]));
+  $("qualiLede").textContent = `Pole: ${rows[0].name}. Your team: ` + mine.map((r) =>
+    `${r.code} P${r.pos}` + (r.mode !== "normal" ? ` (${callName[r.mode].toLowerCase()})` : "") +
+    (r.mistake ? " after a mistake" : "")).join(", ") + ".";
+  $("qualiBody").replaceChildren(...rows.map((r) => {
+    const tr = el("tr"); if (r.team === S.team) tr.classList.add("mine");
+    const bar = el("td", "teambar"); const i = el("i"); i.style.background = r.color; bar.append(i);
+    const m = Math.floor(r.time / 60), sec = (r.time - 60 * m).toFixed(3).padStart(6, "0");
+    tr.append(el("td", null, String(r.pos)), bar, el("td", null, r.name),
+      el("td", "r", r.pos === 1 ? `${m}:${sec}` : `+${r.gap.toFixed(3)}`),
+      el("td", "r", r.mistake ? "mistake" : ""));
+    return tr;
+  }));
+  $("qualiGoBtn").textContent = S.isHost ? "Start the race" : "Watch the race";
+  if (S.isHost) { send({ type: "pause", paused: true }); S.paused = true; $("pauseBtn").textContent = "Resume"; }
+  $("qualiDialog").showModal();
+}
+
+function closeQualifying() {
+  if (S.isHost && S.paused) { send({ type: "pause", paused: false }); S.paused = false; $("pauseBtn").textContent = "Pause"; }
+}
+
 async function showResults(st) {
   const body = $("resultBody");
   const mine = st.cars.filter((c) => c.controlled).map((c) => `${c.code} P${c.pos}`).join(", ");
@@ -712,6 +770,7 @@ function startSeasonRound(id) {
   // team, circuit and laps come from the season on the server; weather is rolled per round
   const msg = { type: "start", team: sz.team, laps: sz.laps, season: id };
   if (Object.keys(S.startTyres).length) msg.tyres = { ...S.startTyres };
+  if (Object.keys(S.quali).length) msg.quali = { ...S.quali };
   connect(() => {
     S.ws.send(JSON.stringify(msg));
     $("startDialog").close();
@@ -966,6 +1025,8 @@ function startCareerRound() {
   const own = new Set(c.drivers.map((d) => d.code));
   const tyres = Object.fromEntries(Object.entries(S.startTyres).filter(([k]) => own.has(k)));
   if (Object.keys(tyres).length) msg.tyres = tyres;
+  const quali = Object.fromEntries(Object.entries(S.quali).filter(([k]) => own.has(k)));
+  if (Object.keys(quali).length) msg.quali = quali;
   connect(() => { S.ws.send(JSON.stringify(msg)); $("startDialog").close(); });
 }
 
