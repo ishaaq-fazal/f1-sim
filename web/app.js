@@ -183,6 +183,7 @@ async function init() {
   }, 0));
   $("hqBtn").addEventListener("click", openHQ);
   $("hqGoBtn").addEventListener("click", hqGo);
+  $("hqFactoryBtn").addEventListener("click", () => careerPost("factory"));
   $("hqStandingsBtn").addEventListener("click", async () => {
     await loadSeason(S.career.season_id); $("hqDialog").close(); openStandings();
   });
@@ -650,7 +651,7 @@ async function showResults(st) {
     const mineTeam = S.season && S.season.teams.find((t) => t.team === S.season.season.team);
     $("resultLede").textContent += ` Round ${season.round} of ${season.rounds}: your team scored ${pts} point${pts === 1 ? "" : "s"}` +
       (mineTeam ? ` and is P${mineTeam.pos} in the teams' championship on ${mineTeam.points}.` : ".") +
-      (season.career ? ` Prize money: $${(1 + 0.4 * pts).toFixed(1)}M.` : "");
+      (season.career ? ` Prize money: $${(1 + 0.4 * pts).toFixed(1)}M and ${1 + Math.floor(pts / 10)} development points.` : "");
   }
   body.replaceChildren(...st.cars.map((c) => {
     const tr = el("tr"); if (c.controlled) tr.classList.add("mine");
@@ -876,8 +877,9 @@ function renderCareerBox() {
   const buttons = [];
   if (c) {
     const where = c.season_finished ? "season over" : `round ${c.rounds_done + 1} of ${ROUNDS()} at ${trackName(track8(c.rounds_done + 1))}`;
+    const status = c.status === "sacked" ? "sacked: job offers waiting" : c.status === "over" ? "career over" : where;
     text.append(el("b", null, `Career with ${teamName(c.team)}`),
-      document.createTextNode(` · season ${c.season_no} · ${where} · budget ${money(c.budget)}`));
+      document.createTextNode(` · season ${c.season_no} · ${status} · budget ${money(c.budget)} · ${c.dev_points} DP`));
     const hq = el("button", c.ready ? "btn" : "btn primary", "Team HQ"); hq.type = "button";
     hq.addEventListener("click", () => { $("startDialog").close(); openHQ(); });
     if (c.ready) {
@@ -890,7 +892,7 @@ function renderCareerBox() {
     if (radio) { radio.checked = true; buildTyrePicker(); }
   } else {
     text.append(el("b", null, "Career mode"),
-      document.createTextNode(": season after season with one team. Earn prize money, develop the car between races and sign drivers. Uses the team and laps picked below; the weather is random each round."));
+      document.createTextNode(": build a team over the seasons. Results earn money and development points for the car, drivers age and improve or fade, and the board sets targets each season: miss them and you're sacked. Uses the team and laps picked below; the weather is random each round."));
     const go = el("button", "btn", "Start a career"); go.type = "button";
     go.addEventListener("click", startCareer);
     buttons.push(go);
@@ -945,13 +947,19 @@ function renderHQ() {
     (c.season_finished ? "season complete" : `${c.rounds_done} of ${ROUNDS()} rounds raced`) + ` · ${c.laps} laps · random weather each round`;
   const stat = (label, value) => { const d = el("div", null, label); d.prepend(el("b", null, value)); return d; };
   const wages = c.drivers.reduce((a, d) => a + d.salary, 0);
-  $("hqMoney").replaceChildren(stat("Budget", money(c.budget)), stat("Driver wages this season", money(wages)),
-    stat("Prize money won", money(c.income)), stat("Spent on the car", money(c.spent.upgrades || 0)));
+  $("hqMoney").replaceChildren(stat("Budget", money(c.budget)), stat("Development points", `${c.dev_points} DP`),
+    stat("Driver wages this season", money(wages)), stat("Prize money won", money(c.income)));
 
+  const working = c.status === "active";
+  renderBoard(c);
+  $("hqDevHint").textContent = "· results earn DP every round, plus a bigger allowance after each season for teams lower down";
+  const factory = $("hqFactoryBtn");
+  factory.textContent = `Fund the factory · ${money(c.factory_cost)} → ${c.factory_dp} DP`;
+  factory.disabled = !working || c.budget < c.factory_cost;
   $("hqUpgrades").replaceChildren(...c.upgrades.map((u) => {
     const tr = el("tr");
-    const btn = el("button", "btn", u.next_cost == null ? "Maxed" : `Upgrade · ${money(u.next_cost)}`); btn.type = "button";
-    btn.disabled = u.next_cost == null || u.next_cost > c.budget || c.season_finished;
+    const btn = el("button", "btn", u.next_cost == null ? "Maxed" : `Upgrade · ${u.next_cost} DP`); btn.type = "button";
+    btn.disabled = u.next_cost == null || u.next_cost > c.dev_points || !working;
     btn.addEventListener("click", () => careerPost("upgrade", { area: u.area }));
     tr.append(el("td", null, u.label), el("td", "lvl", `Lv ${u.level}`), el("td", "r", null));
     tr.lastChild.append(btn);
@@ -961,16 +969,16 @@ function renderHQ() {
   $("hqDrivers").replaceChildren(...c.drivers.map((d) => {
     const tr = el("tr"); if (d.years <= 0) tr.classList.add("expired");
     const cell = el("td", "r");
-    if (d.years <= 0 && pre) {
+    if (d.years <= 0 && pre && !d.retiring && working) {
       for (const y of [1, 2, 3]) {
         const b = el("button", "btn", `Renew ${y}y`); b.type = "button";
         b.addEventListener("click", () => careerPost("renew", { code: d.code, years: y }));
         cell.append(b);
       }
     }
-    tr.append(el("td", null, `${d.name} (${d.code})`), el("td", null, `Rating ${d.rating}`),
+    tr.append(el("td", null, `${d.name} (${d.code})`), el("td", null, `Age ${d.age}`), ratingCell(d),
       el("td", null, `${money(d.salary)} a season`),
-      el("td", null, d.years > 0 ? `${d.years} season${d.years === 1 ? "" : "s"} left` : "Contract over"), cell);
+      el("td", null, d.retiring ? "Retiring: sign a replacement" : d.years > 0 ? `${d.years} season${d.years === 1 ? "" : "s"} left` : "Contract over"), cell);
     return tr;
   }));
 
@@ -979,7 +987,7 @@ function renderHQ() {
   $("hqMarket").replaceChildren(...c.market.map((m) => {
     const tr = el("tr");
     const cell = el("td", "r");
-    if (pre) {
+    if (pre && working) {
       const years = el("select");
       for (const y of [1, 2, 3]) { const o = el("option", null, `${y} season${y === 1 ? "" : "s"}`); o.value = y; years.append(o); }
       years.value = "2";
@@ -990,7 +998,9 @@ function renderHQ() {
         cell.append(b);
       }
     }
-    tr.append(el("td", null, `${m.name} (${m.code})`), el("td", null, `Rating ${m.rating}`),
+    const who = el("td", null, `${m.name} (${m.code})`);
+    who.append(el("div", "hq-hist-verdict", `Age ${m.age}`));
+    tr.append(who, ratingCell(m),
       el("td", null, `${money(m.salary)} a season`), cell);
     return tr;
   }));
@@ -998,17 +1008,65 @@ function renderHQ() {
   $("hqHistoryBox").hidden = c.history.length === 0;
   $("hqHistory").replaceChildren(...c.history.map((h) => {
     const tr = el("tr");
-    tr.append(el("td", null, `Season ${h.season}`), el("td", null, `Teams' P${h.team_position}`),
-      el("td", null, `${h.points} pts`), el("td", null, `Champion ${h.champion}`),
-      el("td", "r", `+${money(h.prize)} prize, −${money(h.salaries)} wages`));
+    const verdict = { bonus: "Board: every target met, bonus paid", warning: "Board: final warning",
+      sacked: "Board: sacked" }[h.verdict] || "";
+    const who = el("td", null, `Season ${h.season}`);
+    if (h.team) who.append(el("div", "hq-hist-verdict", teamName(h.team)));
+    const pos = el("td", null, `Teams' P${h.team_position}`);
+    if (verdict) pos.append(el("div", "hq-hist-verdict", verdict));
+    tr.append(who, pos, el("td", null, `${h.points} pts`), el("td", null, `Champion ${h.champion}`),
+      el("td", "r", `+${money(h.prize)} prize, −${money(h.salaries)} wages` + (h.dev_points ? `, +${h.dev_points} DP` : "")));
     return tr;
   }));
 
   const go = $("hqGoBtn");
   go.disabled = false;
-  if (c.season_finished) go.textContent = `Start season ${c.season_no + 1}`;
+  go.hidden = !working;
+  if (c.season_finished) go.textContent = `End season ${c.season_no} · board review`;
   else go.textContent = `Start round ${c.rounds_done + 1} · ${trackName(track8(c.rounds_done + 1))}`;
   if (!c.ready && !c.season_finished) { go.disabled = true; $("hqError").textContent = c.blocker; }
+}
+
+function ratingCell(d) {
+  const td = el("td", null, `Rating ${d.rating}`);
+  if (d.change) td.append(el("span", d.change > 0 ? "up" : "down", ` ${d.change > 0 ? "▲" : "▼"}${Math.abs(d.change)}`));
+  return td;
+}
+
+function renderBoard(c) {
+  const last = c.history.length ? c.history[c.history.length - 1] : null;
+  $("hqBoardHint").textContent = c.status !== "active" ? "" :
+    `· expected to finish around P${c.expected}` + (c.warning ? " · you're on a final warning: miss one target and you're out" :
+      " · miss two targets and you're sacked");
+  $("hqBoard").replaceChildren(...c.objectives.map((o) => {
+    const li = el("li", o.met === true ? "ok" : o.met === false ? "bad" : null, o.text);
+    const tag = o.met == null ? o.now : `${o.now} · ${c.season_finished ? (o.met ? "met" : "missed") : (o.met ? "on track" : "behind")}`;
+    li.append(el("span", null, tag));
+    return li;
+  }));
+  const box = $("hqSacked");
+  box.hidden = c.status === "active";
+  if (c.status === "active") return;
+  const missed = last ? last.objectives.filter((o) => !o.met).map((o) => o.text.charAt(0).toLowerCase() + o.text.slice(1)) : [];
+  const why = missed.length ? `The board wanted you to ${missed.join(" and ")}.` : "";
+  const offers = c.offers.map((o) => {
+    const b = el("button", "btn primary", `Join ${o.name}`); b.type = "button";
+    b.addEventListener("click", () => careerPost("accept", { team: o.team }));
+    return b;
+  });
+  if (c.status === "sacked") {
+    $("hqSackedTitle").textContent = `${teamName(c.team)} have sacked you`;
+    $("hqSackedText").textContent = `${why} ${c.offers.length === 1 ? "One weaker team has" : "These weaker teams have"} offered you a job. ` +
+      "You'd take over their car, drivers and budget.";
+    const quit = el("button", "btn ghost", "Walk away"); quit.type = "button";
+    quit.addEventListener("click", () => { if (confirm("End this career for good?")) careerPost("retire"); });
+    offers.push(quit);
+  } else {
+    $("hqSackedTitle").textContent = "Career over";
+    $("hqSackedText").textContent = `${why} ${c.offers.length ? "" : "No team was willing to take you on."} ` +
+      `You ran ${c.teams_managed.map(teamName).join(", then ")} for ${c.history.length} season${c.history.length === 1 ? "" : "s"}.`;
+  }
+  $("hqOffers").replaceChildren(...offers);
 }
 
 async function hqGo() {

@@ -38,16 +38,16 @@ def test_race_grid_has_20_unique_drivers_and_upgrades_make_your_car_faster():
     assert cr.team_wear(st)["solace"] < 1 and cr.team_dnf(st)["solace"] < 1
 
 
-def test_upgrades_cost_more_each_level_and_need_the_money():
+def test_upgrades_cost_more_development_points_each_level():
     st = cr.new_career("aurora", 1)
-    st["budget"] = 20.0
-    assert cr.buy_upgrade(st, "power") == 6.0 and st["budget"] == 14.0
-    assert cr.buy_upgrade(st, "power") == 10.0 and st["budget"] == 4.0
-    with pytest.raises(cr.CareerError, match="Not enough budget"):
+    st["dev_points"], budget = 9, st["budget"]
+    assert cr.buy_upgrade(st, "power") == 3 and st["dev_points"] == 6
+    assert cr.buy_upgrade(st, "power") == 5 and st["dev_points"] == 1
+    with pytest.raises(cr.CareerError, match="Not enough development points"):
         cr.buy_upgrade(st, "power")
     with pytest.raises(cr.CareerError):
         cr.buy_upgrade(st, "warp-drive")
-    assert st["upgrades"]["power"] == 2 and st["spent"]["upgrades"] == 16.0
+    assert st["upgrades"]["power"] == 2 and st["budget"] == budget      # money untouched
 
 
 def test_signing_a_driver_buys_out_the_old_contract_and_swaps_seats():
@@ -71,7 +71,8 @@ def test_end_of_season_pays_prizes_and_wages_ticks_contracts_and_rivals_improve(
     budget, wages = st["budget"], sum(d["salary"] for d in st["drivers"])
     years = [d["years"] for d in st["drivers"]]
     summary = cr.end_season(st, team_position=3, team_points=120, champion="MAR", seed=5)
-    assert st["budget"] == pytest.approx(budget + cr.SEASON_PRIZE[2] - wages, abs=0.1)
+    assert summary["verdict"] == "bonus"           # P3 with 120 points beats Verdant's targets
+    assert st["budget"] == pytest.approx(budget + cr.SEASON_PRIZE[2] + cr.BOARD_BONUS_MONEY - wages, abs=0.1)
     assert [d["years"] for d in st["drivers"]] == [y - 1 for y in years]
     assert all(v > 0 for v in st["ai_dev"].values())
     assert st["season_no"] == 2 and st["history"] == [summary] and summary["team_position"] == 3
@@ -136,7 +137,7 @@ def race_round(email, career_id):
 def test_create_career_and_its_season_is_separate_from_season_mode(alice):
     c = new_career(alice)
     assert c["season_no"] == 1 and c["rounds_done"] == 0 and c["ready"] and len(c["drivers"]) == 2
-    assert [u["next_cost"] for u in c["upgrades"]] == [6.0] * 4
+    assert [u["next_cost"] for u in c["upgrades"]] == [3] * 5
     assert alice.get("/api/seasons").json() == []                   # not listed with plain seasons
     assert alice.get(f"/api/seasons/{c['season_id']}").status_code == 200   # but its standings work
     assert alice.delete(f"/api/seasons/{c['season_id']}", headers=ORIGIN).status_code == 404
@@ -147,14 +148,17 @@ def test_buying_upgrades_through_the_api(alice):
     r = alice.post(f"/api/careers/{c['id']}/upgrade", json={"area": "aero"}, headers=ORIGIN)
     assert r.status_code == 200
     after = r.json()
-    assert after["budget"] == pytest.approx(c["budget"] - 6.0)
+    assert after["dev_points"] == c["dev_points"] - 3 and after["budget"] == c["budget"]
     assert next(u for u in after["upgrades"] if u["area"] == "aero") == {
-        "area": "aero", "label": cr.AREAS["aero"], "level": 1, "next_cost": 10.0}
+        "area": "aero", "label": cr.AREAS["aero"], "level": 1, "next_cost": 5}
     for _ in range(20):
         r = alice.post(f"/api/careers/{c['id']}/upgrade", json={"area": "power"}, headers=ORIGIN)
         if r.status_code == 400:
             break
-    assert r.json()["detail"] == "Not enough budget"
+    assert r.json()["detail"] == "Not enough development points"
+    r = alice.post(f"/api/careers/{c['id']}/factory", headers=ORIGIN)
+    assert r.status_code == 200
+    assert r.json()["dev_points"] >= cr.FACTORY_DP and r.json()["budget"] == pytest.approx(c["budget"] - cr.FACTORY_COST)
     assert alice.post(f"/api/careers/{c['id']}/upgrade", json={"area": "nitro"},
                       headers=ORIGIN).status_code == 422
 
@@ -221,10 +225,14 @@ def test_careers_are_private(alice, bob):
     assert bob.get(f"/api/seasons/{c['season_id']}").status_code == 404
     for path, body in ((f"/api/careers/{cid}/upgrade", {"area": "power"}),
                        (f"/api/careers/{cid}/sign", {"code": "QUI", "replace": "MAR", "years": 1}),
+                       (f"/api/careers/{cid}/factory", None),
+                       (f"/api/careers/{cid}/accept", {"team": "kestrel"}),
+                       (f"/api/careers/{cid}/retire", None),
                        (f"/api/careers/{cid}/next-season", None)):
         assert bob.post(path, json=body, headers=ORIGIN).status_code == 404
     assert bob.delete(f"/api/careers/{cid}", headers=ORIGIN).status_code == 404
-    assert alice.get(f"/api/careers/{cid}").json()["budget"] == c["budget"]      # nothing changed
+    after = alice.get(f"/api/careers/{cid}").json()
+    assert after["budget"] == c["budget"] and after["dev_points"] == c["dev_points"]   # nothing changed
     with bob.websocket_connect("/ws/race", headers=ORIGIN) as ws:
         ws.send_text(json.dumps({"type": "start", "team": "aurora", "laps": 5, "season": c["season_id"]}))
         assert ws.receive_json()["detail"] == "Season not found"
@@ -233,7 +241,8 @@ def test_careers_are_private(alice, bob):
 def test_career_responses_do_not_leak_internal_fields(alice):
     c = new_career(alice)
     assert "owner_id" not in c and "state" not in c and "seed" not in c and "ai_dev" not in c
-    assert set(c["drivers"][0]) == {"code", "name", "rating", "salary", "years"}
+    assert set(c["drivers"][0]) == {"code", "name", "rating", "salary", "years", "age", "change", "retiring"}
+    assert all("growth" not in d and "delta" not in d for d in c["drivers"] + c["market"])
 
 
 def test_viewers_cannot_start_a_career(admin, bob):

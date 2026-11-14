@@ -231,14 +231,23 @@ def create_career(s: Session, actor: User, team: str, laps: int, weather: str) -
     return career
 
 
+def _migrated(career: Career | None) -> Career | None:
+    """Fill in fields added after a career was saved (saved with its next change)."""
+    if career is not None:
+        state = career_rules.migrate(career.state)
+        if state is not career.state:
+            career.state = state
+    return career
+
+
 def list_careers(s: Session, actor: User, limit: int = 20) -> list[Career]:
     q = select(Career).where(Career.owner_id == actor.id).order_by(Career.id.desc()).limit(limit)
-    return list(s.exec(q))
+    return [_migrated(c) for c in s.exec(q)]
 
 
 def get_career(s: Session, actor: User, career_id: int) -> Career | None:
     q = select(Career).where(Career.id == career_id, Career.owner_id == actor.id)
-    return s.exec(q).first()
+    return _migrated(s.exec(q).first())
 
 
 def career_season(s: Session, actor: User, career: Career) -> Season:
@@ -265,6 +274,8 @@ def career_action(s: Session, actor: User, career_id: int, action: str, **kw) ->
     try:
         if action == "upgrade":
             career_rules.buy_upgrade(state, kw["area"])
+        elif action == "factory":
+            career_rules.fund_factory(state)
         elif action == "sign":
             career_rules.sign_driver(state, kw["code"], kw["replace"], kw["years"], season.rounds_done)
         elif action == "renew":
@@ -272,14 +283,23 @@ def career_action(s: Session, actor: User, career_id: int, action: str, **kw) ->
         elif action == "next_season":
             if not season.finished:
                 raise career_rules.CareerError(f"Finish this season's {ROUNDS} rounds first")
-            _, teams = standings(season_results(s, actor, season.id))
-            drivers, _ = standings(season_results(s, actor, season.id))
-            mine = next((i for i, t in enumerate(teams, 1) if t.key == career.team), len(teams))
+            drivers, teams = standings(season_results(s, actor, season.id))
+            positions = {t.key: i for i, t in enumerate(teams, 1)}
+            mine = positions.get(career.team, len(teams))
             pts = next((t.points for t in teams if t.key == career.team), 0)
             career_rules.end_season(state, mine, pts, drivers[0].key if drivers else "",
-                                    seed=state["seed"] + state["season_no"])
+                                    seed=state["seed"] + state["season_no"], team_positions=positions,
+                                    driver_points={d.key: d.points for d in drivers})
+            if state["status"] == "active":          # sacked: no new season until a new job
+                s.add(Season(owner_id=actor.id, career_id=career.id, team=career.team,
+                             laps=career.laps, weather=career.weather))
+        elif action == "accept":
+            career_rules.accept_offer(state, kw["team"], seed=state["seed"] + 7919 * state["season_no"])
+            career.team = state["team"]
             s.add(Season(owner_id=actor.id, career_id=career.id, team=career.team,
                          laps=career.laps, weather=career.weather))
+        elif action == "retire":
+            career_rules.end_career(state)
         else:
             raise career_rules.CareerError("Unknown action")
     except career_rules.CareerError as e:

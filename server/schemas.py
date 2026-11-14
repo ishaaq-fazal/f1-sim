@@ -262,7 +262,11 @@ class CareerIn(_In):
 
 
 class UpgradeIn(_In):
-    area: Literal["power", "aero", "tyres", "reliability"]
+    area: Literal["power", "aero", "tyres", "pit", "reliability"]
+
+
+class OfferIn(_In):
+    team: TeamId
 
 
 class SignIn(_In):
@@ -282,22 +286,46 @@ class ContractOut(BaseModel):
     rating: int
     salary: float
     years: int
+    age: int
+    change: int            # rating change over the last off-season
+    retiring: bool
 
 
 class UpgradeOut(BaseModel):
     area: str
     label: str
     level: int
-    next_cost: float | None
+    next_cost: int | None      # development points
+
+
+class ObjectiveOut(BaseModel):
+    kind: str
+    text: str
+    now: str
+    met: bool | None           # None before the first race
+
+
+class ObjectiveResultOut(BaseModel):
+    text: str
+    met: bool
+
+
+class OfferOut(BaseModel):
+    team: str
+    name: str
 
 
 class CareerSeasonOut(BaseModel):
     season: int
+    team: str = ""
     team_position: int
     points: int
     champion: str
     prize: float
     salaries: float
+    dev_points: int = 0
+    verdict: str = ""
+    objectives: list[ObjectiveResultOut] = []
 
 
 class CareerOut(BaseModel):
@@ -312,6 +340,15 @@ class CareerOut(BaseModel):
     budget: float
     income: float
     spent: dict[str, float]
+    dev_points: int
+    factory_dp: int
+    factory_cost: float
+    status: str                # active, sacked or over
+    warning: bool              # the board warned you last season
+    expected: int              # where the board expects you to finish
+    objectives: list[ObjectiveOut]
+    offers: list[OfferOut]
+    teams_managed: list[str]
     upgrades: list[UpgradeOut]
     drivers: list[ContractOut]
     market: list[ContractOut]

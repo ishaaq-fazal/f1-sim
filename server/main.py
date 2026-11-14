@@ -284,7 +284,8 @@ class RaceSession:
                     self.career = {"id": career.id, "season_no": career.state["season_no"],
                                    "drivers": career_rules.race_grid(career.state),
                                    "wear": career_rules.team_wear(career.state),
-                                   "dnf": career_rules.team_dnf(career.state)}
+                                   "dnf": career_rules.team_dnf(career.state),
+                                   "pit": career_rules.team_pit(career.state)}
                 else:
                     self.career = None
             else:
@@ -308,7 +309,8 @@ class RaceSession:
                                                 quali_modes=dict(cmd.quali or {}),
                                                 weather=cmd.weather,
                                                 team_wear=self.career["wear"] if self.career else None,
-                                                team_dnf=self.career["dnf"] if self.career else None),
+                                                team_dnf=self.career["dnf"] if self.career else None,
+                                                team_pit=self.career["pit"] if self.career else None),
                                      drivers=grid)
             self.paused, self.pred_cache, self.saved = False, {}, False
             await self._send_init()

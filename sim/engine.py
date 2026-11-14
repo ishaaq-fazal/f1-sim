@@ -56,6 +56,7 @@ class RaceConfig:
     # Career mode: per-team multipliers from car upgrades (1.0 = no change).
     team_wear: dict[str, float] | None = None   # tyre wear rate
     team_dnf: dict[str, float] | None = None    # chance of a mechanical retirement
+    team_pit: dict[str, float] | None = None    # seconds the pit crew saves on each stop
 
 
 @dataclass
@@ -409,6 +410,7 @@ class RaceEngine:
             return
         loss = self.track.pit_loss_s * (0.55 if self.vsc else 1.0)
         stationary = 2.3 + abs(self.rng.gauss(0, 0.3))
+        stationary = max(1.6, stationary - (self.cfg.team_pit or {}).get(car.driver.team, 0.0))
         if self.rng.random() < 0.04:
             stationary += self.rng.uniform(2, 6)
             self._event("slow-stop", f"Slow stop for {car.code}! {stationary:.1f}s", car.code)
