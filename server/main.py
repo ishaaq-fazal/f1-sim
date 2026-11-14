@@ -31,7 +31,7 @@ from .config import ROOT, settings
 from .db import Role, User, engine as db_engine, init_db, ping
 from .routes import router
 from . import league_race
-from .schemas import (DriverOut, LobbyCmd, ReadyCmd, ModeCmd, PauseCmd, PitCmd, SetupOut, SpeedCmd, StartCmd, TeamOut, TrackOut,
+from .schemas import (DriverOut, LobbyCmd, ReadyCmd, ModeCmd, OrderCmd, PauseCmd, PitCmd, SetupOut, SpeedCmd, StartCmd, TeamOut, TrackOut,
                       command_adapter)
 from .security import RateLimit, SameOriginWrites, SecurityHeaders, SlidingWindow, origin_allowed
 
@@ -226,6 +226,8 @@ class RaceSession:
             err = self.room.command(self.user, "pause", paused=cmd.paused)
         elif isinstance(cmd, PitCmd):
             err = self.room.command(self.user, "pit", driver=cmd.driver, compound=cmd.compound)
+        elif isinstance(cmd, OrderCmd):
+            err = self.room.command(self.user, "order")
         else:
             err = self.room.command(self.user, "mode", driver=cmd.driver, mode=cmd.mode)
         if err:
@@ -320,6 +322,13 @@ class RaceSession:
             self.speed = cmd.value
         elif isinstance(cmd, PauseCmd):
             self.paused = cmd.paused
+        elif isinstance(cmd, OrderCmd):
+            if self.user.role not in (Role.principal, Role.admin):
+                return await self._error("Viewers can watch but not give orders")
+            # Authorisation: team orders only ever apply to your own team.
+            err = self.engine.team_order(self.team)
+            if err:
+                await self._error(err)
         elif isinstance(cmd, (PitCmd, ModeCmd)):
             if self.user.role not in (Role.principal, Role.admin):
                 return await self._error("Viewers can watch but not give orders")

@@ -17,6 +17,7 @@ class Driver:
     pace_s: float          # team car pace + driver skill, s/lap vs reference
     consistency_s: float   # lap-to-lap noise (std dev)
     racecraft: float       # 0..1, helps attacking and defending
+    loyalty: float = 0.6   # 0..1, how willing they are to follow team orders
 
 
 # (team id, display name, colour, car pace)
@@ -48,10 +49,26 @@ DRIVERS = [
 ]
 
 
+# Team-player temperament for the default drivers (anyone else gets one from loyalty_for()).
+LOYALTY = {
+    "MAR": 0.35, "OKA": 0.85, "BRA": 0.40, "VEN": 0.80, "TAK": 0.55, "ILV": 0.75, "CAS": 0.60, "NOV": 0.70,
+    "ROS": 0.30, "AMA": 0.80, "LIN": 0.65, "FER": 0.45, "HAL": 0.70, "DUV": 0.60, "PET": 0.40, "SAN": 0.75,
+    "GRA": 0.65, "MOR": 0.55, "KOV": 0.50, "ELL": 0.85,
+}
+
+
+def loyalty_for(code: str) -> float:
+    """A driver's team-player temperament: fixed for the default drivers, otherwise derived
+    from their code so it stays the same from race to race."""
+    if code in LOYALTY:
+        return LOYALTY[code]
+    return round(0.3 + (sum(ord(ch) * (i + 1) for i, ch in enumerate(code)) % 56) / 100, 2)
+
+
 def default_grid() -> list[Driver]:
     teams = {t[0]: t for t in TEAMS}
     out = []
     for code, name, team, delta, cons, craft in DRIVERS:
         _, team_name, color, car = teams[team]
-        out.append(Driver(code, name, team, color, round(car + delta, 3), cons, craft))
+        out.append(Driver(code, name, team, color, round(car + delta, 3), cons, craft, loyalty_for(code)))
     return out

@@ -53,8 +53,14 @@ The race engine is Python; the browser draws it.
   over time, and a forecast shows the chance of rain. Intermediates and Wets are quick in the wet
   but overheat on a drying track; AI teams switch tyres when the gain pays for the stop. Using a
   wet tyre waives the two-compound rule.
-* **Pit wall**: box this lap for any compound, push / normal / conserve pace, and a
+* **Pit wall**: box this lap for any compound, radio calls (push, normal, save tyres), and a
   "model's best plan" prediction that updates as the tyres wear.
+* **Team orders**: "Swap positions" tells the car ahead to let its team-mate by. Each driver has
+  a team-player temperament, and nobody likes giving up a podium or the lead, so they may ignore you.
+* **Safety Car and VSC**: crashes, cars stopped on track and debris bring out a Safety Car (the
+  field bunches up behind it, no overtaking, stops cost about half) or a VSC (everyone slows, gaps
+  freeze, stops a bit cheaper). You get a "box now?" call per driver with the model's advice, and
+  AI teams take cheap stops, save tyres on long stints, push at the end and use team orders too.
 * **Live timing**: track map with DRS zones and sectors, timing tower (gap/interval, last and
   best laps, tyre and age, stops), lap time chart, race control feed (overtakes, pit stops,
   fastest laps, Virtual Safety Car, retirements).
@@ -101,11 +107,13 @@ pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 
 Each lap a car's target time is:
 `reference lap + car/driver pace + tyre delta(wear) + fuel (0.032 s/kg) + pace mode + noise`,
-plus a standing-start loss on lap 1, rare mistakes, and x1.4 under the VSC.
+plus a standing-start loss on lap 1, rare mistakes, and x1.4 under the VSC. Under the Safety
+Car the leader runs at x1.45 and everyone else closes up to ~1.2 s behind the car ahead.
 Cars move round the lap along a speed profile (slow in corners, fast on straights).
 A car that catches the one ahead is held at ~0.2 s unless it wins an overtake roll, which
 gets likelier with a bigger pace gap, DRS, and better racecraft.
-A pit stop costs 19-23 s depending on the circuit (about half under the VSC). Using only one
+A pit stop costs 19-23 s depending on the circuit (the pit lane limit doesn't change, so with the field slowed a stop costs about half under the
+Safety Car and about two thirds under the VSC). Using only one
 compound earns +10 s. Each circuit scales tyre wear per lap and the chance of overtaking, and the
 AI teams' strategies (and the "best plan" prediction) are optimised for that circuit.
 

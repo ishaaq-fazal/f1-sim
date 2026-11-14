@@ -38,6 +38,23 @@ QUALI_MODES: dict[str, tuple[float, float, float]] = {
     "normal": (0.0, 1.0, 1.0),
     "push": (-0.25, 1.3, 3.0),
 }
+# Neutralisations. Under a VSC every car slows by the same factor, so gaps freeze. Under a Safety
+# Car the leader follows the SC and everyone else closes up to the car ahead, so the field bunches.
+VSC_SLOW = 1.4            # lap time multiplier under the VSC
+SC_SLOW = 1.45            # Safety Car lap time vs a normal lap
+SC_GAP_S = 1.2            # gap the queue closes up to behind the Safety Car
+SC_CATCH = 1.12           # how much slower than racing pace cars run while catching the queue
+# The pit lane speed limit doesn't change, so a stop loses less ground while the field is slow:
+# about half the usual time under the SC and a bit less than usual under the VSC.
+SC_PIT_MULT = 0.75
+VSC_PIT_MULT = 0.9
+MAX_NEUTRAL = 3           # most Safety Cars + VSCs in one race
+SC_SHARE = {"crash": 0.7, "stopped": 0.25, "debris": 0.35}   # chance an incident needs a full SC
+# Team orders: the car letting its team-mate by runs this much slower until it's been passed.
+YIELD_SLOW = 1.05
+SWAP_MAX_GAP_S = 3.0
+RADIO = {"push": "push now, everything you've got", "normal": "back to normal pace",
+         "conserve": "save the tyres, bring it home"}
 
 
 @dataclass
@@ -50,7 +67,8 @@ class RaceConfig:
     start_tyres: dict[str, str] | None = None   # player's starting compound per driver code
     quali_modes: dict[str, str] | None = None   # player's qualifying approach per driver: safe, normal, push
     weather: str = "dry"                        # dry, wet, changeable, showers or drying
-    vsc_chance_per_lap: float = 0.025
+    vsc_chance_per_lap: float = 0.025       # debris on track (VSC or Safety Car) per leader lap
+    crash_chance_per_lap: float = 0.0008     # per car per lap: crashes out and brings out a SC or VSC
     dnf_chance_per_lap: float = 0.0008
     mistake_chance_per_lap: float = 0.012
     # Career mode: per-team multipliers from car upgrades (1.0 = no change).
@@ -94,6 +112,10 @@ class Car:
     retired: bool = False
     penalty_s: float = 0.0
     form_s: float = 0.0           # race-day form, s/lap (negative = faster)
+    advice: dict | None = None    # box-now call made when a Safety Car or VSC came out
+    yield_to: str | None = None   # team-mate this car is letting past (team orders)
+    yield_until: float = 0.0
+    last_order_lap: int = -99     # last lap the team gave this pair a swap order
 
     @property
     def code(self) -> str:
@@ -122,6 +144,13 @@ class RaceEngine:
         self.chequered = False
         self.vsc_until = -1.0
         self.vsc_count = 0
+        self.sc = False               # full Safety Car out
+        self.sc_end_lap = 0           # leader lap at the end of which the SC comes in
+        self.sc_in = False            # "Safety Car in this lap" announced
+        self.sc_count = 0
+        self.drs_after_t = 0.0        # DRS stays off for a lap after a restart
+        # Incidents and AI radio calls draw from their own stream, seeded from the race seed.
+        self.inc_rng = random.Random(f"incidents-{self.cfg.seed}" if self.cfg.seed is not None else None)
         self.leader_lap_seen = 0
         self.fastest: dict | None = None
         self.events: list[dict] = []
@@ -228,6 +257,19 @@ class RaceEngine:
     def vsc(self) -> bool:
         return self.t < self.vsc_until
 
+    @property
+    def neutral(self) -> str | None:
+        """'sc', 'vsc' or None."""
+        return "sc" if self.sc else "vsc" if self.vsc else None
+
+    def _pit_mult(self) -> float:
+        return SC_PIT_MULT if self.sc else VSC_PIT_MULT if self.vsc else 1.0
+
+    def stop_cost(self) -> float:
+        """Time a pit stop costs right now compared with staying out at racing speed."""
+        slow = SC_SLOW if self.sc else VSC_SLOW if self.vsc else 1.0
+        return self.track.pit_loss_s * self._pit_mult() / slow
+
     def _event(self, kind: str, text: str, code: str | None = None) -> None:
         lap = min(self.cfg.laps, max(1, self.leader().lap + 1)) if self.cars else 1
         self.events.append({"t": round(self.t, 1), "lap": lap, "kind": kind, "text": text, "code": code})
@@ -250,8 +292,42 @@ class RaceEngine:
         car = self.car(code)
         if not car or not car.running or mode not in PACE_MODES:
             return False
+        if car.controlled and mode != car.mode:
+            self._event("radio", f"{car.code}: {RADIO[mode]}", car.code)
         car.mode = mode
         return True
+
+    def team_order(self, team: str) -> str | None:
+        """Tell the car ahead to let its team-mate past. Returns an error, or None if the order
+        was given (the driver may still ignore it)."""
+        cars = sorted((c for c in self.cars if c.driver.team == team and c.running and c.pit_timer <= 0),
+                      key=lambda c: -c.dist)
+        if len(cars) < 2:
+            return "Both drivers need to be out on track"
+        ahead, behind = cars[0], cars[1]
+        if ahead.yield_to:
+            return f"{ahead.code} is already letting {ahead.yield_to} through"
+        if (ahead.dist - behind.dist) * ahead.lap_target > SWAP_MAX_GAP_S:
+            return f"They're too far apart to swap (more than {SWAP_MAX_GAP_S:.0f}s)"
+        behind.last_order_lap = ahead.last_order_lap = behind.lap
+        self._event("radio", f"Team to {ahead.code}: let {behind.code} through", ahead.code)
+        if self.inc_rng.random() < self.swap_chance(ahead):
+            ahead.yield_to, ahead.yield_until = behind.code, self.t + ahead.lap_target * 1.2
+            behind.passing = ahead.code
+            self._event("radio", f"{ahead.code}: \"Copy, letting {behind.code} by.\"", ahead.code)
+        else:
+            reply = ("No way, I'm faster!" if ahead.driver.loyalty < 0.45 else
+                     "Give me a lap, I can pull away." if ahead.driver.loyalty < 0.7 else
+                     "Sorry, couldn't find a safe place.")
+            self._event("radio", f"{ahead.code} ignores the order: \"{reply}\"", ahead.code)
+        return None
+
+    def swap_chance(self, ahead: Car) -> float:
+        """Chance a driver obeys an order to let their team-mate by: loyal drivers usually do,
+        and nobody likes handing over a podium or the lead."""
+        pos = self.order().index(ahead) + 1
+        p = 0.25 + 0.7 * ahead.driver.loyalty - (0.15 if pos <= 3 else 0.0) - (0.15 if pos == 1 else 0.0)
+        return max(0.05, min(0.97, p))
 
     # ----------------------------------------------------------- simulation
     def step(self, dt: float) -> None:
@@ -268,7 +344,8 @@ class RaceEngine:
         self.t += dt
         self.weather.step(self.t, dt)
         self._weather_messages()
-        slow = 1.4 if self.vsc else 1.0
+        slow = VSC_SLOW if self.vsc else 1.0
+        sc_rates = self._sc_rates() if self.sc else {}
         for car in self.cars:
             if not car.running:
                 continue
@@ -278,11 +355,33 @@ class RaceEngine:
                     car.pit_timer = 0
                     self._event("pit-out", f"{car.code} rejoins on {COMPOUNDS[car.tyre].name}s", car.code)
                 continue
-            car.frac += dt / (car.lap_target * slow)
+            rate = sc_rates[car.code] if self.sc else 1.0 / (car.lap_target * slow)
+            if car.yield_to:
+                mate = self.car(car.yield_to)
+                if (mate is None or not mate.running or self.t > car.yield_until
+                        or mate.dist > car.dist + 2 * MIN_GAP_S / car.lap_target):
+                    car.yield_to = None
+                else:
+                    rate /= YIELD_SLOW
+            car.frac += dt * rate
         self._interactions(dt)
         for car in self.cars:
             if car.running and car.pit_timer <= 0:
                 self._sectors_and_line(car)
+
+    def _sc_rates(self) -> dict[str, float]:
+        """Laps per second for each car behind the Safety Car: the leader follows the SC and
+        everyone else closes up to the car ahead, then holds station."""
+        sc_lap = (self.track.base_lap_s + 6.0 * self.weather.wetness) * SC_SLOW
+        order = sorted((c for c in self.cars if c.running and c.pit_timer <= 0), key=lambda c: -c.dist)
+        rates, prev = {}, None
+        for car in order:
+            rate = 1.0 / sc_lap
+            if prev is not None and (prev.dist - car.dist) * sc_lap > SC_GAP_S:
+                rate = max(rate, 1.0 / (car.lap_target * SC_CATCH))
+            rates[car.code] = rate
+            prev = car
+        return rates
 
     def _interactions(self, dt: float) -> None:
         order = sorted((c for c in self.cars if c.running and c.pit_timer <= 0), key=lambda c: -c.dist)
@@ -297,8 +396,11 @@ class RaceEngine:
             if car.passing == ahead.code:
                 continue
             delta = ahead.lap_target - car.lap_target         # s/lap, + means car is faster
-            drs = (not self.vsc and car.lap >= 2 and self.track.in_drs(car.frac))
-            rate = 0.0 if self.vsc else max(0.0, 0.01 + 0.22 * delta + (0.35 if drs else 0.0))
+            neutral = self.neutral is not None
+            drs = (not neutral and self.t >= self.drs_after_t and car.lap >= 2 and self.track.in_drs(car.frac))
+            rate = 0.0 if neutral else max(0.0, 0.01 + 0.22 * delta + (0.35 if drs else 0.0))
+            if car.yield_to == ahead.code:
+                rate = 0.0                       # let the team-mate go, don't re-pass
             rate *= 0.6 + 0.8 * car.driver.racecraft - 0.4 * ahead.driver.racecraft
             rate *= self.track.overtake_mult * (1 + 0.4 * self.weather.wetness)
             if ahead.dist - car.dist > 0.45:  # lapping a backmarker: blue flags
@@ -336,7 +438,7 @@ class RaceEngine:
         car.sector_idx = 0
         car.tyre_age += 1
         _, wear_mult = PACE_MODES[car.mode]
-        car.wear += (wear_mult * self.track.wear_mult * (0.4 if self.vsc else 1.0)
+        car.wear += (wear_mult * self.track.wear_mult * (0.4 if self.neutral else 1.0)
                      * wear_factor(car.tyre, self.weather.wetness)
                      * (self.cfg.team_wear or {}).get(car.driver.team, 1.0))
         car.fuel = max(0.0, car.fuel - FUEL_PER_LAP_KG)
@@ -367,9 +469,21 @@ class RaceEngine:
         if self.rng.random() < self.cfg.dnf_chance_per_lap * (self.cfg.team_dnf or {}).get(car.driver.team, 1.0):
             car.retired = True
             self._event("dnf", f"{car.code} retires with a power unit failure", car.code)
+            if self.inc_rng.random() < 0.4:      # stopped somewhere awkward
+                self._incident("stopped", f"{car.code} has stopped on track")
+            return
+
+        crash = (self.cfg.crash_chance_per_lap * (1 + 3 * self.weather.wetness)
+                 * (1.6 if car.mode == "push" else 1.0) * (0.2 if self.neutral else 1.0))
+        if self.inc_rng.random() < crash:
+            car.retired = True
+            self._event("crash", f"{car.code} crashes out!", car.code)
+            self._incident("crash", f"{car.code} has crashed")
             return
 
         self._race_control(car)
+        if not car.controlled:
+            self._ai_radio(car)
         self._maybe_pit(car)
         car.lap_target = self._lap_time(car)
 
@@ -378,11 +492,91 @@ class RaceEngine:
             return
         self.leader_lap_seen = car.lap
         laps_left = self.cfg.laps - car.lap
-        if (not self.vsc and self.vsc_count < 2 and 3 <= car.lap and laps_left > 3
-                and self.rng.random() < self.cfg.vsc_chance_per_lap * (1 + 3 * self.weather.rain)):
-            self.vsc_until = self.t + self.track.base_lap_s * self.rng.uniform(1.5, 2.5)
+        if self.sc:
+            if car.lap >= self.sc_end_lap:
+                self.sc, self.sc_in = False, False
+                self.drs_after_t = self.t + self.track.base_lap_s
+                self._event("green", "Green flag! The Safety Car is in and racing resumes")
+            elif car.lap == self.sc_end_lap - 1 and not self.sc_in:
+                self.sc_in = True
+                self._event("sc", "Safety Car in this lap")
+            return
+        if (3 <= car.lap and laps_left > 3
+                and self.inc_rng.random() < self.cfg.vsc_chance_per_lap * (1 + 3 * self.weather.rain)):
+            self._incident("debris", "debris on track")
+
+    def _incident(self, kind: str, reason: str) -> None:
+        """Something on track: bring out a Safety Car or a VSC, if one isn't out already."""
+        lead = self.leader()
+        if (self.neutral or self.chequered or self.vsc_count + self.sc_count >= MAX_NEUTRAL
+                or self.cfg.laps - lead.lap <= 2):
+            return
+        if self.inc_rng.random() < SC_SHARE[kind]:
+            self.sc, self.sc_in = True, False
+            self.sc_end_lap = lead.lap + self.inc_rng.randint(3, 5)
+            self.sc_count += 1
+            self._event("sc", f"Safety Car deployed: {reason}. The field will bunch up; pit stops are cheap")
+        else:
+            self.vsc_until = self.t + self.track.base_lap_s * self.inc_rng.uniform(1.5, 2.5)
             self.vsc_count += 1
-            self._event("vsc", "Virtual Safety Car deployed: debris on track")
+            self._event("vsc", f"Virtual Safety Car deployed: {reason}. Gaps frozen; pit stops a bit cheaper")
+        for c in self.cars:
+            c.advice = self.box_advice(c) if c.running else None
+
+    def box_advice(self, car: Car) -> dict:
+        """Should this car take a cheap stop at the end of this lap? Compares the best plan
+        staying out with the best plan after a stop now at today's reduced cost."""
+        n = self.cfg.laps - car.lap - 1          # laps left after a stop at the end of this lap
+        now, full = self.stop_cost(), self.track.pit_loss_s
+        out = {"box": False, "compound": car.tyre, "saving_s": 0.0, "cost_s": round(now, 1),
+               "usual_s": round(full, 1)}
+        if n < 2 or car.pit_timer > 0:
+            return out
+        compound, gain = self._weather_gain(car, n)
+        if compound and gain > 0.3:
+            return {**out, "box": True, "compound": compound, "saving_s": round(float(gain * n - now), 1)}
+        if car.tyre in WET:
+            pct = COMPOUNDS[car.tyre].wear_pct(car.wear)
+            return {**out, "box": pct > 50, "saving_s": round(max(0.0, (pct - 50) / 10), 1)}
+        m = self.track.wear_mult
+        stay = best_plan(n, full, car.tyre, car.wear + m, car.used, wear_mult=m,
+                         require_two=needs_second_compound(car.used)).cost_s
+        best_c, best = car.tyre, math.inf
+        for c in DRY:
+            used = car.used | {c}
+            cost = now + best_plan(n, full, c, 0.0, used, wear_mult=m,
+                                   require_two=needs_second_compound(used)).cost_s
+            if cost < best:
+                best_c, best = c, cost
+        if not math.isfinite(stay):
+            stay = best + full          # staying out breaks the two-compound rule
+        saving = float(stay - best)
+        return {**out, "box": bool(saving > 1.0), "compound": best_c, "saving_s": round(saving, 1)}
+
+    def _ai_radio(self, car: Car) -> None:
+        """AI pace calls: save tyres when a stint is running long, push in the closing laps,
+        and ask a faster team-mate to be let through."""
+        laps_left = self.cfg.laps - car.lap
+        car.mode = "normal"
+        if self.neutral or car.tyre not in DRY or ideal_type(self.weather.wetness) != "dry":
+            return
+        stops = car.plan.stops if car.plan else []
+        stint_left = stops[0][0] - (car.lap - car.plan_base) if stops else laps_left
+        projected = car.wear + max(0, stint_left) * self.track.wear_mult
+        cliff = COMPOUNDS[car.tyre].cliff_lap
+        if not stops and stint_left > 2 and projected > cliff + 3:
+            car.mode = "conserve"
+        elif laps_left <= 5 and not stops and projected < cliff - 2:
+            car.mode = "push"
+        mate = next((c for c in self.cars if c.driver.team == car.driver.team and c is not car), None)
+        if (mate and mate.running and not mate.controlled and mate.pit_timer <= 0 and laps_left > 3
+                and car.lap - car.last_order_lap > 5 and 0 < mate.dist - car.dist
+                and (mate.dist - car.dist) * car.lap_target < 1.5
+                and self._pace(car) < self._pace(mate) - 0.35 and self.inc_rng.random() < 0.5):
+            self.team_order(car.driver.team)
+
+    def _pace(self, car: Car) -> float:
+        return car.driver.pace_s + car.form_s + COMPOUNDS[car.tyre].delta(car.wear) + PACE_MODES[car.mode][0]
 
     def _maybe_pit(self, car: Car) -> None:
         laps_left = self.cfg.laps - car.lap
@@ -396,8 +590,11 @@ class RaceEngine:
             if compound is None and due and car.tyre in DRY and dry_now:
                 n, c = due
                 laps_to_stop = n - (car.lap - car.plan_base)
-                if laps_to_stop <= 0 or (self.vsc and laps_to_stop <= 6):
+                if laps_to_stop <= 0:
                     compound = c
+            if (compound is None and self.neutral and car.advice and car.advice["box"]
+                    and car.advice["saving_s"] > self.inc_rng.uniform(0.0, 6.0)):
+                compound = car.advice["compound"]        # take the cheap stop
             worn = car.wear > COMPOUNDS[car.tyre].cliff_lap + 2 and laps_left > 3
             if compound is None and worn and car.tyre in WET:
                 compound = car.tyre                       # fresh set of the same wet tyre
@@ -408,7 +605,7 @@ class RaceEngine:
                 compound = plan.stops[0][1] if plan.stops else ("H" if car.tyre != "H" else "M")
         if compound is None or laps_left < 1:
             return
-        loss = self.track.pit_loss_s * (0.55 if self.vsc else 1.0)
+        loss = self.track.pit_loss_s * self._pit_mult()
         stationary = 2.3 + abs(self.rng.gauss(0, 0.3))
         stationary = max(1.6, stationary - (self.cfg.team_pit or {}).get(car.driver.team, 0.0))
         if self.rng.random() < 0.04:
@@ -421,6 +618,8 @@ class RaceEngine:
         car.used.add(compound)
         car.pits += 1
         car.passing = None
+        car.advice = None
+        car.yield_to = None
         if not car.controlled:
             # Re-plan the rest of the race from here (dry tyres only; in the wet the weather decides).
             car.plan = (best_plan(laps_left, self.track.pit_loss_s, compound, 0.0, car.used,
@@ -428,7 +627,8 @@ class RaceEngine:
                         if compound in DRY else Plan(None, [], 0.0))
             car.plan_base = car.lap
         self._event("pit", f"{car.code} pits: {COMPOUNDS[old].name} -> {COMPOUNDS[compound].name}"
-                    + (" (cheap stop under VSC)" if self.vsc else ""), car.code)
+                    + (" (cheap stop under the Safety Car)" if self.sc else
+                       " (cheap stop under VSC)" if self.vsc else ""), car.code)
 
     # -------------------------------------------------------------- weather
     def _dry_pick(self, car: Car, laps_left: int) -> str:
@@ -460,7 +660,7 @@ class RaceEngine:
     def _weather_call(self, car: Car, laps_left: int) -> str | None:
         compound, gain = self._weather_gain(car, laps_left)
         # Only switch when the time won back over the remaining laps beats most of the stop.
-        stop_cost = self.track.pit_loss_s * (0.5 if self.vsc else 1.0)
+        stop_cost = self.stop_cost()
         if compound and gain > car.weather_threshold and gain * max(laps_left, 1) > 0.8 * stop_cost:
             return compound
         return None
@@ -517,7 +717,8 @@ class RaceEngine:
                 "tyre": c.tyre, "tyre_age": c.tyre_age, "wear": round(COMPOUNDS[c.tyre].wear_pct(c.wear)),
                 "used": sorted(c.used), "pits": c.pits, "mode": c.mode, "pit_request": c.pit_request,
                 "controlled": c.controlled, "finished": c.finished, "retired": c.retired,
-                "penalty": c.penalty_s,
+                "penalty": c.penalty_s, "yielding": c.yield_to is not None,
+                "advice": c.advice if (c.controlled and c.running and self.neutral) else None,
             })
             prev = c
         events, self.events = self.events, []
@@ -525,6 +726,8 @@ class RaceEngine:
         return {
             "t": round(self.t, 2), "lap": min(self.cfg.laps, lead.lap + (0 if lead.finished else 1)),
             "total_laps": self.cfg.laps, "vsc": self.vsc, "chequered": self.chequered,
+            "sc": self.sc, "sc_in": self.sc_in, "neutral": self.neutral,
+            "neutral_id": self.vsc_count + self.sc_count,
             "finished": self.finished,
             "weather": {**self.weather.snapshot(self.t), "ideal": self._ideal},
             "fastest": None if not self.fastest else {**self.fastest, "time": round(self.fastest["time"], 3)},

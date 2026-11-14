@@ -216,6 +216,10 @@ class LeagueRoom:
                 return None
             if user.role not in (Role.principal, Role.admin):
                 return "Viewers can watch but not give orders"
+            if kind == "order":
+                # Authorisation: a team order only ever applies to your own team.
+                team = self.team_of(user)
+                return self.engine.team_order(team) if team else "You're not racing in this round"
             car = self.engine.car(kw["driver"])
             # Authorisation: only your own team's cars, even though every player's cars are "controlled".
             if car is None or car.driver.team != self.team_of(user):
@@ -254,7 +258,9 @@ class LeagueRoom:
         mine = self.team_of(user)
         nick = {p["team"]: p["nickname"] for p in self.players.values()}
         snap = dict(self.snap)
-        snap["cars"] = [{**c, "controlled": c["team"] == mine, "player": nick.get(c["team"])}
+        # Box-now advice is only for the player whose car it is.
+        snap["cars"] = [{**c, "controlled": c["team"] == mine, "player": nick.get(c["team"]),
+                         "advice": c.get("advice") if c["team"] == mine else None}
                         for c in self.snap["cars"]]
         snap["events"] = [e for q, e in self.events if q > since]
         snap["laps"] = [l for q, l in self.laps if q > since]

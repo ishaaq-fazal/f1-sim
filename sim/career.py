@@ -22,7 +22,7 @@ import random
 import statistics
 from dataclasses import replace
 
-from .grid import DRIVERS, TEAMS, Driver, default_grid
+from .grid import DRIVERS, TEAMS, Driver, default_grid, loyalty_for
 from .season import ROUNDS
 
 # ---------------------------------------------------------------- car development
@@ -196,7 +196,7 @@ def race_grid(state: dict) -> list[Driver]:
     car_pace = own_car_pace(state)
     for e in state["drivers"]:
         out.append(Driver(e["code"], e["name"], team, color, round(car_pace + e["delta"], 3),
-                          e["consistency"], e["racecraft"]))
+                          e["consistency"], e["racecraft"], loyalty_for(e["code"])))
     return out
 
 

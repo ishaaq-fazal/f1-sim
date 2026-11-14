@@ -11,6 +11,7 @@ const el = (tag, cls, text) => {
 };
 
 const S = {
+  boxDismissed: new Set(),     // "box now?" prompts the player has answered
   ws: null, setup: null, team: null, track: null, compounds: {},
   state: null, gapMode: "gap", speed: 1, paused: false,
   disp: new Map(),            // code -> displayed track position (smoothed)
@@ -380,7 +381,7 @@ function onMessage(m) {
     S.engPrev = null;
     Sound.startLights();
     $("trackName").dataset.round = S.seasonRace ? `Round ${S.seasonRace.round}/${S.seasonRace.rounds} · ` : "";
-    S.disp.clear(); S.laps.clear(); S.charted.clear(); S.fastest = null; S.resultShown = false;
+    S.disp.clear(); S.laps.clear(); S.charted.clear(); S.fastest = null; S.resultShown = false; S.boxDismissed.clear();
     S.paused = false; $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = !S.isHost;
     for (const b of $("speedSeg").children) b.disabled = !S.isHost;
     $("speedSeg").title = S.isHost ? "" : "The league owner controls the race speed";
@@ -432,6 +433,7 @@ function raceSounds(st) {
     else if (ev.kind === "finish") Sound.chequered();
     else if (ev.kind === "overtake" && mine.has(ev.code)) Sound.overtake();
     else if (ev.kind === "radio" && mine.has(ev.code)) Sound.radio();
+    else if (ev.kind === "sc" || ev.kind === "vsc") Sound.radio();
   }
   const car = st.cars.find((c) => c.controlled && !c.finished && !c.retired);
   if (!car || st.finished || st.paused || !S.track) { Sound.engine(0, false); return; }
@@ -463,6 +465,7 @@ function renderHeader(st) {
   $("raceClock").textContent = fmtClock(st.t);
   const f = $("flag");
   if (st.chequered) { f.className = "flag chequered"; f.textContent = "FINISH"; }
+  else if (st.sc) { f.className = "flag vsc"; f.textContent = st.sc_in ? "SC IN THIS LAP" : "SAFETY CAR"; }
   else if (st.vsc && st.weather && st.weather.rain > 0.03) { f.className = "flag vsc"; f.textContent = "VSC · RAIN"; }
   else if (st.vsc) { f.className = "flag vsc"; f.textContent = "VSC"; }
   else { f.className = "flag green"; f.textContent = "GREEN"; }
@@ -494,6 +497,7 @@ function renderTower(st) {
     if (c.player && !c.controlled) who.append(el("span", "badge player", c.player));   // a friend's car
     if (c.in_pit) who.append(el("span", "badge pit", "PIT"));
     else if (c.pit_request) who.append(el("span", "badge box", "BOX"));
+    else if (c.yielding) who.append(el("span", "badge box", "LET BY"));
     const gapTxt = S.gapMode === "gap" ? c.gap : (c.pos === 1 ? "INTERVAL" : c.interval);
     const last = el("td", "r", fmtLap(c.last));
     if (c.last != null && st.fastest && Math.abs(c.last - st.fastest.time) < 1e-6) last.classList.add("purple");
@@ -541,15 +545,21 @@ function buildCard(c) {
     });
     act.append(b);
   }
-  act.append(el("span", "label", "Pace"));
+  act.append(el("span", "label", "Radio"));
   const seg = el("div", "seg small");
-  for (const [k, label] of [["push", "Push"], ["normal", "Normal"], ["conserve", "Conserve"]]) {
-    const b = el("button", null, label); b.type = "button"; b.dataset.mode = k;
+  for (const [k, label, tip] of [["push", "Push", "Faster, but the tyres wear quicker"],
+    ["normal", "Normal", "Normal pace"], ["conserve", "Save tyres", "Slower, but the tyres last longer"]]) {
+    const b = el("button", null, label); b.type = "button"; b.dataset.mode = k; b.title = tip;
     b.addEventListener("click", () => send({ type: "mode", driver: c.code, mode: k }));
     seg.append(b);
   }
-  act.append(seg);
-  card.append(top, stat, wear, pred, act);
+  const swap = el("button", "orderbtn", "Swap positions");
+  swap.type = "button";
+  swap.title = "Team order: the car ahead lets its team-mate through. They might ignore you.";
+  swap.addEventListener("click", () => send({ type: "order", order: "swap" }));
+  act.append(seg, swap);
+  const call = el("div", "sc-call"); call.hidden = true;
+  card.append(top, stat, wear, call, pred, act);
   return card;
 }
 
@@ -578,6 +588,9 @@ function updateCard(c, st) {
     b.classList.toggle("on", b.dataset.mode === c.mode);
     b.disabled = done || !S.canCommand;
   });
+  const mates = st.cars.filter((x) => x.controlled && !x.finished && !x.retired && !x.in_pit);
+  card.querySelector(".orderbtn").disabled = done || !S.canCommand || mates.length < 2 || st.chequered;
+  updateBoxCall(card, c, st, done);
 
   const pred = card.querySelector(".predict");
   const p = (st.predictions || []).find((x) => x.code === c.code);
@@ -600,6 +613,32 @@ function updateCard(c, st) {
     });
     if (c.used.length < 2 && !p.stops.length) pred.append(" (penalty risk)");
   }
+}
+
+// "Box now?" prompt when a Safety Car or VSC comes out, with the model's call for this car.
+function updateBoxCall(card, c, st, done) {
+  const box = card.querySelector(".sc-call");
+  const a = c.advice;
+  const key = `${st.neutral_id}:${c.code}`;
+  const show = a && st.neutral && !done && !c.in_pit && !c.pit_request && S.canCommand && !S.boxDismissed.has(key);
+  if (!show) { box.hidden = true; box.dataset.key = ""; return; }
+  const sig = `${key}:${a.box}:${a.compound}`;
+  if (box.hidden === false && box.dataset.key === sig) return;     // already showing this call
+  box.hidden = false; box.dataset.key = sig;
+  const name = S.compounds[a.compound].name;
+  const what = st.neutral === "sc" ? "Safety Car!" : "VSC!";
+  const head = el("b", null, `${what} Box now?`);
+  const body = el("span", null, ` A stop costs about ${a.cost_s}s instead of ${a.usual_s}s. ` +
+    (a.box ? `Model says box for ${name}s (about ${Math.max(0, a.saving_s).toFixed(0)}s better).`
+           : "Model says stay out."));
+  const yes = el("button", "boxbtn", `Box for ${name}s`); yes.type = "button";
+  yes.style.color = S.compounds[a.compound].color; yes.style.borderColor = S.compounds[a.compound].color;
+  yes.addEventListener("click", () => { send({ type: "pit", driver: c.code, compound: a.compound }); S.boxDismissed.add(key); box.hidden = true; });
+  const no = el("button", "boxbtn stayout", "Stay out"); no.type = "button";
+  no.addEventListener("click", () => { S.boxDismissed.add(key); box.hidden = true; });
+  const btns = el("div", "sc-btns"); btns.append(a.box ? yes : no, a.box ? no : yes);
+  box.className = "sc-call" + (a.box ? " go" : "");
+  box.replaceChildren(head, body, btns);
 }
 
 // ---------------------------------------------------------------- log + results
@@ -1251,7 +1290,18 @@ function drawRain(ctx, w, h, wx) {
   ctx.stroke();
 }
 
+function drawSafetyCar(ctx, v) {
+  const lead = S.state.cars.find((c) => !c.retired && !c.in_pit && !c.finished);
+  if (!lead || !S.disp.has(lead.code)) return;
+  const p = pointAt(S.track, (S.disp.get(lead.code) + 0.012) % 1);
+  const [x, y] = v.map(p.x, p.y);
+  ctx.fillStyle = "#ffd400"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
+  ctx.fillRect(x - 9, y - 6, 18, 12); ctx.strokeRect(x - 9, y - 6, 18, 12);
+  ctx.fillStyle = "#000"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("SC", x - 6, y + 3);
+}
+
 function drawCars(ctx, v) {
+  if (S.state.sc) drawSafetyCar(ctx, v);
   const cars = [...S.state.cars].reverse();  // leader drawn on top
   const pitSlots = new Map();
   cars.forEach((c) => {

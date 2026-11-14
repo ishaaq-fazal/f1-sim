@@ -55,6 +55,12 @@ class ModeCmd(_Msg):
     mode: Literal["push", "normal", "conserve"]
 
 
+class OrderCmd(_Msg):
+    """Team order: the car ahead lets its team-mate through (the driver may ignore it)."""
+    type: Literal["order"]
+    order: Literal["swap"]
+
+
 class LobbyCmd(_Msg):
     """Open the race lobby of a league you're in (its next round is raced by everyone together)."""
     type: Literal["lobby"]
@@ -70,7 +76,7 @@ class ReadyCmd(_Msg):
     quali: dict[DriverCode, QualiMode] | None = Field(default=None, max_length=2)
 
 
-Command = Annotated[Union[StartCmd, SpeedCmd, PauseCmd, PitCmd, ModeCmd, LobbyCmd, ReadyCmd],
+Command = Annotated[Union[StartCmd, SpeedCmd, PauseCmd, PitCmd, ModeCmd, OrderCmd, LobbyCmd, ReadyCmd],
                     Field(discriminator="type")]
 command_adapter: TypeAdapter[Command] = TypeAdapter(Command)
 
