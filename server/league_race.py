@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from sim import RaceConfig, RaceEngine, default_grid
-from sim.season import ROUNDS, round_weather, track_for_round
+from sim.season import ROUNDS, round_weather, sprint_laps, sprint_seed, track_for_round
 
 from . import repo
 from .db import Role, User, engine as db_engine
@@ -45,6 +45,7 @@ class LeagueRoom:
         self.players: dict[int, dict] = {}       # user id -> lobby row, fixed when the race starts
         self.host_id: int | None = None
         self.round_no = 0
+        self.session = "race"                    # "sprint" when racing a sprint weekend's sprint
         self.seed = 0
         self.speed = 1
         self.paused = False
@@ -117,13 +118,15 @@ class LeagueRoom:
         blocker = None
         if any(p["finished"] for p in players):
             blocker = "This league's season is over"
-        elif len(rounds) > 1:
+        elif len(rounds) > 1 or len({p.get("session", "race") for p in players}) > 1:
             blocker = "Players are on different rounds"
         round_no = (min(rounds) + 1) if rounds else 1
+        session = players[0].get("session", "race") if players else "race"
         me = next((p for p in players if p["user_id"] == user.id), None)
         return {
             "type": "lobby", "league": info["id"], "name": info["name"], "laps": info["laps"],
-            "round": round_no, "rounds": ROUNDS,
+            "round": round_no, "rounds": ROUNDS, "session": session or "race",
+            "race_laps": sprint_laps(info["laps"]) if session == "sprint" else info["laps"],
             "track": track_for_round(round_no) if round_no <= ROUNDS else None,
             "status": "racing" if self.racing() else "waiting", "blocker": blocker,
             "host": info["owner_id"] == user.id, "your_season": me["season_id"] if me else None,
@@ -138,22 +141,27 @@ class LeagueRoom:
             return
         if any(p["user_id"] not in self.ready for p in players):
             return
-        if any(p["finished"] for p in players) or len({p["rounds_done"] for p in players}) != 1:
+        if (any(p["finished"] for p in players) or len({p["rounds_done"] for p in players}) != 1
+                or len({p.get("session", "race") for p in players}) != 1):
             return
         self.round_no = players[0]["rounds_done"] + 1
+        self.session = players[0].get("session", "race")
         lead = players[0]
         with Session(db_engine) as s:
             season = repo.get_season(s, repo.user_by_id(s, lead["user_id"]), lead["season_id"])
             self.seed = repo.season_round_seed(season, self.round_no)
+        laps = info["laps"]
+        if self.session == "sprint":
+            self.seed, laps = sprint_seed(self.seed), sprint_laps(laps)
         tyres: dict[str, str] = {}
         quali: dict[str, str] = {}
         for p in players:
             tyres.update(self.ready[p["user_id"]])
             quali.update(self.ready_quali.get(p["user_id"], {}))
         self.engine = RaceEngine(RaceConfig(
-            laps=info["laps"], seed=self.seed, controlled_teams=tuple(p["team"] for p in players),
+            laps=laps, seed=self.seed, controlled_teams=tuple(p["team"] for p in players),
             track_id=track_for_round(self.round_no), start_tyres=tyres, quali_modes=quali,
-            weather=round_weather(self.seed)),
+            weather=round_weather(self.seed), sprint=self.session == "sprint"),
             drivers=default_grid())
         self.players = {p["user_id"]: dict(p) for p in players}
         self.host_id = info["owner_id"]
@@ -240,13 +248,15 @@ class LeagueRoom:
                 if owner is None:
                     continue
                 mine = [(i, c) for i, c in enumerate(order, 1) if c.driver.team == p["team"]]
-                summary = f"League round {self.round_no}: " + ", ".join(
+                label = " sprint" if self.session == "sprint" else ""
+                summary = f"League round {self.round_no}{label}: " + ", ".join(
                     f"{c.code} {'DNF' if c.retired else f'P{i}'}" for i, c in mine)
                 try:
                     repo.save_race(s, owner, team=p["team"], track=track, laps=self.engine.cfg.laps,
                                    seed=self.seed, best_position=min((i for i, c in mine if not c.retired), default=None),
                                    winner=order[0].driver.name, summary=summary[:400])
-                    repo.record_round(s, owner, p["season_id"], self.round_no, track, self.seed, results)
+                    record = repo.record_sprint if self.session == "sprint" else repo.record_round
+                    record(s, owner, p["season_id"], self.round_no, track, self.seed, results)
                 except (repo.SeasonError, repo.PermissionDenied, IntegrityError):
                     s.rollback()
                     log.warning("League round not recorded (league %s, season %s, round %s)",

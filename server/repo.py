@@ -19,9 +19,9 @@ import secrets
 
 from sim import TEAMS
 from sim import career as career_rules
-from sim.season import ROUNDS, points_for, standings, track_for_round
+from sim.season import ROUNDS, is_sprint_round, points_for, standings, track_for_round
 
-from .db import Career, League, LeagueMember, RaceRecord, Role, Season, SeasonResult, User
+from .db import Career, League, LeagueMember, RaceRecord, Role, Season, SeasonResult, SprintResult, User
 
 
 class PermissionDenied(Exception):
@@ -147,6 +147,40 @@ def season_results(s: Session, actor: User, season_id: int) -> list[SeasonResult
     return list(s.exec(q))
 
 
+def sprint_results(s: Session, actor: User, season_id: int) -> list[SprintResult]:
+    q = (select(SprintResult)
+         .where(SprintResult.season_id == season_id, SprintResult.owner_id == actor.id)
+         .order_by(SprintResult.round, SprintResult.position))
+    return list(s.exec(q))
+
+
+def all_results(s: Session, actor: User, season_id: int) -> list:
+    """Grand Prix and sprint rows together: what the championship standings are built from."""
+    return season_results(s, actor, season_id) + sprint_results(s, actor, season_id)
+
+
+def _sprint_done(s: Session, season: Season, round_no: int) -> bool:
+    q = select(func.count()).select_from(SprintResult).where(
+        SprintResult.season_id == season.id, SprintResult.owner_id == season.owner_id,
+        SprintResult.round == round_no)
+    return s.exec(q).one() > 0
+
+
+def _next_session(s: Session, season: Season) -> str | None:
+    if season.finished:
+        return None
+    n = season.rounds_done + 1
+    return "sprint" if is_sprint_round(n) and not _sprint_done(s, season, n) else "race"
+
+
+def next_session(s: Session, actor: User, season: Season) -> str | None:
+    """What the season races next: "sprint" (a sprint weekend's Saturday race), "race" (a Grand
+    Prix) or None once the season is over. The season must already be one the actor owns."""
+    if season.owner_id != actor.id:
+        return None
+    return _next_session(s, season)
+
+
 def round_seed(season_id: int, round_no: int) -> int:
     """Seed for one round of one season: fixed (so the forecast matches the race and a round
     can't be re-rolled for better weather) and unguessable without the server's secret."""
@@ -173,6 +207,8 @@ def record_round(s: Session, actor: User, season_id: int, round_no: int, track: 
         raise SeasonError("Season not found")
     if season.finished or round_no != season.rounds_done + 1 or track != track_for_round(round_no):
         raise SeasonError("That round can't be recorded")
+    if is_sprint_round(round_no) and not _sprint_done(s, season, round_no):
+        raise SeasonError("Race the sprint first")
     for driver, team, position, retired in results:
         s.add(SeasonResult(season_id=season.id, owner_id=actor.id, round=round_no, track=track, seed=seed,
                            driver=driver, team=team, position=position, retired=retired,
@@ -194,6 +230,40 @@ def record_round(s: Session, actor: User, season_id: int, round_no: int, track: 
     return season
 
 
+def record_sprint(s: Session, actor: User, season_id: int, round_no: int, track: str,
+                  seed: int | None, results: list[tuple[str, str, int, bool]]) -> Season:
+    """Save the sprint of a sprint-weekend round (before its Grand Prix).
+    results = [(driver, team, position, retired), ...]."""
+    _require(actor, Role.principal, Role.admin)
+    season = get_season(s, actor, season_id)
+    if season is None:
+        raise SeasonError("Season not found")
+    if (season.finished or round_no != season.rounds_done + 1 or not is_sprint_round(round_no)
+            or track != track_for_round(round_no) or _sprint_done(s, season, round_no)):
+        raise SeasonError("That sprint can't be recorded")
+    for driver, team, position, retired in results:
+        s.add(SprintResult(season_id=season.id, owner_id=actor.id, round=round_no, track=track, seed=seed,
+                           driver=driver, team=team, position=position, retired=retired,
+                           points=points_for(position, retired, sprint=True)))
+    if season.career_id is not None:
+        career = get_career(s, actor, season.career_id)
+        if career is None:
+            raise SeasonError("Season not found")
+        state = copy.deepcopy(career.state)
+        career_rules.credit_sprint(state, sum(points_for(p, r, sprint=True) for _, t, p, r in results
+                                              if t == career.team))
+        career.state = state
+        s.add(career)
+    s.commit()
+    s.refresh(season)
+    return season
+
+
+def _delete_results(s: Session, actor: User, season_id: int) -> None:
+    for table in (SeasonResult, SprintResult):
+        s.exec(delete(table).where(table.season_id == season_id, table.owner_id == actor.id))
+
+
 def delete_season(s: Session, actor: User, season_id: int) -> bool:
     season = get_season(s, actor, season_id)
     if season is None or season.career_id is not None:   # career seasons go with their career
@@ -202,8 +272,7 @@ def delete_season(s: Session, actor: User, season_id: int) -> bool:
                                               LeagueMember.user_id == actor.id)).first()
     if entry is not None:
         _leave(s, actor, entry)          # deleting a league season leaves that league
-    s.exec(delete(SeasonResult).where(SeasonResult.season_id == season.id,
-                                      SeasonResult.owner_id == actor.id))
+    _delete_results(s, actor, season.id)
     s.delete(season)
     s.commit()
     return True
@@ -283,7 +352,7 @@ def career_action(s: Session, actor: User, career_id: int, action: str, **kw) ->
         elif action == "next_season":
             if not season.finished:
                 raise career_rules.CareerError(f"Finish this season's {ROUNDS} rounds first")
-            drivers, teams = standings(season_results(s, actor, season.id))
+            drivers, teams = standings(all_results(s, actor, season.id))
             positions = {t.key: i for i, t in enumerate(teams, 1)}
             mine = positions.get(career.team, len(teams))
             pts = next((t.points for t in teams if t.key == career.team), 0)
@@ -317,8 +386,7 @@ def delete_career(s: Session, actor: User, career_id: int) -> bool:
     if career is None:
         return False
     for season in career_seasons(s, actor, career):
-        s.exec(delete(SeasonResult).where(SeasonResult.season_id == season.id,
-                                          SeasonResult.owner_id == actor.id))
+        _delete_results(s, actor, season.id)
         s.delete(season)
     s.flush()
     s.delete(career)
@@ -450,7 +518,8 @@ def league_lobby(s: Session, actor: User, league_id: int) -> dict | None:
         if season is not None:
             players.append({"user_id": m.user_id, "nickname": m.nickname, "team": season.team,
                             "season_id": season.id, "rounds_done": season.rounds_done,
-                            "finished": season.finished})
+                            "finished": season.finished,
+                            "session": _next_session(s, season)})
     return {"id": league.id, "name": league.name, "laps": league.laps, "owner_id": league.owner_id,
             "players": players}
 
@@ -470,11 +539,14 @@ def league_table(s: Session, actor: User, league_id: int) -> list[dict] | None:
         results = s.exec(select(SeasonResult).where(SeasonResult.season_id == season.id,
                                                     SeasonResult.owner_id == m.user_id,
                                                     SeasonResult.team == season.team)).all()
-        finishes = [r.position for r in results if not r.retired]
+        sprints = s.exec(select(SprintResult).where(SprintResult.season_id == season.id,
+                                                    SprintResult.owner_id == m.user_id,
+                                                    SprintResult.team == season.team)).all()
+        finishes = [r.position for r in results if not r.retired]     # Grand Prix only, as in F1
         rows.append({"nickname": m.nickname, "team": season.team, "you": m.user_id == actor.id,
                      "owner": m.user_id == s.get(League, league_id).owner_id,
                      "rounds_done": season.rounds_done, "finished": season.finished,
-                     "points": sum(r.points for r in results), "wins": finishes.count(1),
+                     "points": sum(r.points for r in results) + sum(r.points for r in sprints), "wins": finishes.count(1),
                      "podiums": sum(1 for p in finishes if p <= 3),
                      "best_finish": min(finishes) if finishes else None, "_finishes": finishes,
                      "_member_id": m.id})

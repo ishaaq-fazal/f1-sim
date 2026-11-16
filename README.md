@@ -33,6 +33,10 @@ The race engine is Python; the browser draws it.
 * **Season mode**: a 10-race championship, one round at every circuit, with the same team all
   season. Every car scores F1 points (25-18-15-12-10-8-6-4-2-1 for the top 10), and the
   leaderboard shows drivers' and teams' standings plus the calendar with each round's winner.
+  **Sprint weekends** at Riverside Ring, Glacier Pass and Saltmarsh Coast (rounds 3, 6 and 9) add a
+  sprint race before the Grand Prix: about a third of the distance, its own qualifying lap and
+  weather, no compulsory pit stop, and 8-7-6-5-4-3-2-1 points for the top 8. Sprint points count in
+  season, career and league standings (ties still go to Grand Prix wins).
   Each round's weather is random (dry 32%, changeable 24%, showers 18%, drying 12%, wet 14%) and fixed in advance, so
   it can't be re-rolled. The pre-race screen shows the forecast and you pick your starting tyres.
   Seasons are saved to your account; only you can see or delete them.
@@ -73,7 +77,7 @@ sim/        pure-Python race engine (no web code)
   strategy.py   pit strategy optimiser (used by AI teams and for "model's best plan")
   engine.py     the race: lap times, fuel, traffic, overtakes, pit stops, VSC, DNFs, starting tyres
   grid.py       default (made-up) teams and drivers
-  season.py     season calendar, F1 points and championship standings
+  season.py     season calendar, sprint weekends, F1 points and championship standings
   career.py     career mode: budget, car upgrades, driver contracts, rival development
 server/     FastAPI app: serves web/, streams the race over a WebSocket, accounts + database
   repo.py       the only code that touches the database (every query scoped to its owner)

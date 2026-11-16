@@ -87,6 +87,24 @@ class SeasonResult(SQLModel, table=True):
     points: int = 0
 
 
+class SprintResult(SQLModel, table=True):
+    """One car's result in the sprint of a sprint-weekend round (scored 8-7-6-5-4-3-2-1).
+    Kept apart from SeasonResult so the Grand Prix rows stay one per driver per round."""
+    __table_args__ = (UniqueConstraint("season_id", "round", "driver"),)
+    id: int | None = Field(default=None, primary_key=True)
+    season_id: int = Field(foreign_key="season.id", index=True)
+    owner_id: int = Field(foreign_key="user.id", index=True)
+    round: int
+    track: str = Field(max_length=20)
+    seed: int | None = None
+    driver: str = Field(max_length=3)
+    team: str = Field(max_length=20)
+    position: int
+    retired: bool = False
+    points: int = 0
+    sprint: bool = True              # lets standings() tell sprint rows from Grand Prix rows
+
+
 class League(SQLModel, table=True):
     """A group of friends who each run their own season and compare points.
     Only members can see a league; it is joined with its invite code."""

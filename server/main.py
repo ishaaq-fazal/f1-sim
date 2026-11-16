@@ -21,7 +21,8 @@ from sqlmodel import Session
 
 from sim import TEAMS, RaceConfig, RaceEngine, default_grid
 from sim import career as career_rules
-from sim.season import ROUNDS, SCHEDULE, round_weather, track_for_round
+from sim.season import (ROUNDS, SCHEDULE, SPRINT_POINTS, round_weather, sprint_laps, sprint_rounds, sprint_seed,
+                        track_for_round)
 from sim.track import TRACK_SPECS, get_track
 from sim.tyres import COMPOUNDS
 
@@ -87,7 +88,7 @@ def setup() -> SetupOut:
                                wear=t.wear_mult, overtaking=t.overtake_mult, blurb=t.blurb,
                                outline=[[round(x), round(y)] for x, y in t.points[::step]]))
     return SetupOut(teams=teams, tracks=tracks, laps_default=30, speeds=[1, 2, 5, 10, 20, 50],
-                    schedule=list(SCHEDULE))
+                    schedule=list(SCHEDULE), sprint_rounds=sprint_rounds(), sprint_points=list(SPRINT_POINTS))
 
 
 _ws_per_ip: Counter[str] = Counter()
@@ -134,6 +135,7 @@ class RaceSession:
         self.limiter = SlidingWindow(settings.ws_msgs_per_sec, 1.0)
         self.pred_cache: dict[str, tuple[tuple, dict | None]] = {}
         self.season_round: tuple[int, int] | None = None     # (season id, round) while racing a season
+        self.session = "race"                                  # "sprint" for a sprint weekend's sprint
         self.career: dict | None = None                        # career setup for this race, if any
         self.room: league_race.LeagueRoom | None = None        # league lobby / shared race, if in one
         self.room_version = -1                                 # last lobby version sent
@@ -195,7 +197,8 @@ class RaceSession:
         e = room.engine
         return {
             "type": "init", "track": e.track.to_json(), "team": p["team"], "laps": e.cfg.laps, "seed": room.seed,
-            "season": {"id": p["season_id"], "round": room.round_no, "rounds": ROUNDS, "league": room.league_id},
+            "season": {"id": p["season_id"], "round": room.round_no, "rounds": ROUNDS, "league": room.league_id,
+                       "session": room.session},
             "can_command": True, "host": self.user.id == room.host_id,
             "compounds": {k: {"name": c.name, "color": c.color} for k, c in COMPOUNDS.items()},
             "qualifying": e.qualifying,
@@ -275,8 +278,13 @@ class RaceSession:
                 # in advance (shown as a forecast). Starting tyres are the player's call.
                 round_no = season.rounds_done + 1
                 seed = repo.season_round_seed(season, round_no)
+                laps = season.laps
+                with Session(db_engine) as s:
+                    self.session = repo.next_session(s, self.user, season) or "race"
+                if self.session == "sprint":     # a sprint weekend: the short race comes first
+                    seed, laps = sprint_seed(seed), sprint_laps(season.laps)
                 cmd = cmd.model_copy(update={"team": season.team, "track": track_for_round(round_no),
-                                             "laps": season.laps, "weather": round_weather(seed), "seed": seed})
+                                             "laps": laps, "weather": round_weather(seed), "seed": seed})
                 self.season_round = (season.id, round_no)
                 if career is not None:
                     try:
@@ -293,6 +301,7 @@ class RaceSession:
             else:
                 self.season_round = None
                 self.career = None
+                self.session = "race"
             if cmd.team not in TEAM_IDS:
                 return await self._error("Unknown team")
             if cmd.track not in TRACK_SPECS:
@@ -309,7 +318,7 @@ class RaceSession:
             self.engine = RaceEngine(RaceConfig(laps=cmd.laps, seed=self.seed, controlled_team=cmd.team,
                                                 track_id=cmd.track, start_tyres=dict(cmd.tyres or {}),
                                                 quali_modes=dict(cmd.quali or {}),
-                                                weather=cmd.weather,
+                                                weather=cmd.weather, sprint=self.session == "sprint",
                                                 team_wear=self.career["wear"] if self.career else None,
                                                 team_dnf=self.career["dnf"] if self.career else None,
                                                 team_pit=self.career["pit"] if self.career else None),
@@ -376,7 +385,8 @@ class RaceSession:
         mine = [(i, c) for i, c in enumerate(order, 1) if c.driver.team == self.team]
         summary = ", ".join(f"{c.code} {'DNF' if c.retired else f'P{i}'}" for i, c in mine)
         if self.season_round:
-            summary = f"Season round {self.season_round[1]}: {summary}"
+            label = " sprint" if self.session == "sprint" else ""
+            summary = f"Season round {self.season_round[1]}{label}: {summary}"
         with Session(db_engine) as s:
             owner = repo.user_by_id(s, self.user.id)
             if owner is None:
@@ -388,8 +398,9 @@ class RaceSession:
             if self.season_round:
                 season_id, round_no = self.season_round
                 results = [(c.code, c.driver.team, i, c.retired) for i, c in enumerate(order, 1)]
+                record = repo.record_sprint if self.session == "sprint" else repo.record_round
                 try:
-                    repo.record_round(s, owner, season_id, round_no, self.engine.track.id, self.seed, results)
+                    record(s, owner, season_id, round_no, self.engine.track.id, self.seed, results)
                 except (repo.SeasonError, repo.PermissionDenied, IntegrityError):
                     s.rollback()
                     log.warning("Season round not recorded (season %s round %s)", season_id, round_no)
@@ -397,7 +408,8 @@ class RaceSession:
     def _season_json(self) -> dict | None:
         if not self.season_round:
             return None
-        out = {"id": self.season_round[0], "round": self.season_round[1], "rounds": ROUNDS}
+        out = {"id": self.season_round[0], "round": self.season_round[1], "rounds": ROUNDS,
+               "session": self.session}
         if self.career:
             out["career"] = {"id": self.career["id"], "season_no": self.career["season_no"]}
         return out

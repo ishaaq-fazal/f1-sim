@@ -99,7 +99,8 @@ async function showLeague(id) {
   const me = d.table.find((x) => x.you);
   $("leagueRules").textContent = `${lg.laps} laps a race, ${d.rounds} rounds, one at every circuit. ` +
     "Every round is one race with all the players on the same grid; it starts when everyone has pressed Ready in the lobby. " +
-    "Points are the F1 points your team scores (both cars). Ties go to the most wins, then 2nds, and so on. ★ runs the league.";
+    `Rounds ${(d.sprint_rounds || []).join(", ")} are sprint weekends: a short sprint race (8-7-6-5-4-3-2-1 for the top 8) before the Grand Prix. ` +
+    "Points are the F1 points your team scores (both cars). Ties go to the most Grand Prix wins, then 2nds, and so on. ★ runs the league.";
   $("leagueRaceBtn").hidden = !me || me.finished;
   if (me && !me.finished) $("leagueRaceBtn").textContent = `Race lobby: round ${me.rounds_done + 1}`;
   $("leagueLeaveBtn").hidden = false;
@@ -160,13 +161,15 @@ function leaveLobby() {
 }
 
 function renderLobby(m) {
-  const first = !S.lobby || S.lobby.league !== m.league || S.lobby.round !== m.round;
+  const first = !S.lobby || S.lobby.league !== m.league || S.lobby.round !== m.round || S.lobby.session !== m.session;
   S.lobby = m;
   if (!$("lobbyDialog").open) return;
   const me = m.players.find((p) => p.you);
-  $("lobbyTitle").textContent = `${m.name} · round ${m.round}`;
+  const sprint = m.session === "sprint";
+  $("lobbyTitle").textContent = `${m.name} · round ${m.round}${sprint ? " sprint" : ""}`;
   $("lobbyLede").textContent = m.track
-    ? `Round ${m.round} of ${m.rounds} at ${trackName(m.track)}, ${m.laps} laps. You race ${me ? teamName(me.team) : ""}.`
+    ? `Round ${m.round} of ${m.rounds}${sprint ? " sprint" : ""} at ${trackName(m.track)}, ${m.race_laps || m.laps} laps. You race ${me ? teamName(me.team) : ""}.` +
+      (sprint ? " A short race with no compulsory stop; the top 8 score 8-7-6-5-4-3-2-1, then the Grand Prix follows." : "")
     : "This league's season is over.";
   const list = $("lobbyPlayers");
   list.replaceChildren(...m.players.map((p) => {

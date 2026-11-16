@@ -125,12 +125,16 @@ def race_round(email, career_id):
         career = repo.get_career(s, user, career_id)
         season = repo.career_season(s, user, career)
         n = season.rounds_done + 1
-        e = RaceEngine(RaceConfig(laps=5, seed=n, controlled_team=career.team, track_id=track_for_round(n)),
-                       drivers=cr.race_grid(career.state))
-        while not e.finished:
-            e.step(5.0)
-        repo.record_round(s, user, season.id, n, track_for_round(n), n,
-                          [(c.code, c.driver.team, i, c.retired) for i, c in enumerate(e.order(), 1)])
+        sessions = ["sprint", "race"] if repo.next_session(s, user, season) == "sprint" else ["race"]
+        for kind in sessions:           # a sprint weekend races its sprint before the Grand Prix
+            e = RaceEngine(RaceConfig(laps=3 if kind == "sprint" else 5, seed=n, controlled_team=career.team,
+                                      track_id=track_for_round(n), sprint=kind == "sprint"),
+                           drivers=cr.race_grid(career.state))
+            while not e.finished:
+                e.step(5.0)
+            record = repo.record_sprint if kind == "sprint" else repo.record_round
+            record(s, user, season.id, n, track_for_round(n), n,
+                   [(c.code, c.driver.team, i, c.retired) for i, c in enumerate(e.order(), 1)])
 
 
 # ---------------------------------------------------------------- API

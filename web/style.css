@@ -282,3 +282,8 @@ dialog.menu { width: min(860px, calc(100vw - 32px)); padding: 32px; border-top: 
 .quali-seg { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
 .quali-seg .boxbtn { padding: 3px 8px; font-size: 12px; }
 #qualiDialog { width: min(560px, calc(100vw - 32px)); }
+
+/* Sprint weekends: a small tag beside the circuit in the season calendar */
+.sprint-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 3px; font-size: 10px;
+  font-weight: 700; letter-spacing: .04em; text-transform: uppercase; background: #ffb020; color: #111;
+  vertical-align: 1px; }

@@ -35,7 +35,8 @@ def test_security_headers(client):
 
 def test_setup_lists_teams(client):
     data = client.get("/api/setup").json()
-    assert len(data["teams"]) == 10 and set(data) == {"teams", "tracks", "laps_default", "speeds", "schedule"}
+    assert len(data["teams"]) == 10 and set(data) == {"teams", "tracks", "laps_default", "speeds", "schedule",
+                                                                    "sprint_rounds", "sprint_points"}
 
 
 def test_source_and_dotfiles_not_served(client):

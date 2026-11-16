@@ -395,6 +395,14 @@ def credit_round(state: dict, team_points: int) -> float:
     return prize
 
 
+def credit_sprint(state: dict, team_points: int) -> float:
+    """Sprint prize money: paid per point scored (no appearance money, no development points)."""
+    prize = round(ROUND_PRIZE_PER_POINT * team_points, 1)
+    state["budget"] = round(state["budget"] + prize, 1)
+    state["income"] = round(state["income"] + prize, 1)
+    return prize
+
+
 # ---------------------------------------------------------------- drivers between seasons
 def age_shift(age: int) -> float:
     """Pace change from a year of age (negative = faster)."""

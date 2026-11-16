@@ -67,6 +67,7 @@ class RaceConfig:
     start_tyres: dict[str, str] | None = None   # player's starting compound per driver code
     quali_modes: dict[str, str] | None = None   # player's qualifying approach per driver: safe, normal, push
     weather: str = "dry"                        # dry, wet, changeable, showers or drying
+    sprint: bool = False     # sprint race: short, no mandatory stop (two-compound rule doesn't apply)
     vsc_chance_per_lap: float = 0.025       # debris on track (VSC or Safety Car) per leader lap
     crash_chance_per_lap: float = 0.0008     # per car per lap: crashes out and brings out a SC or VSC
     dnf_chance_per_lap: float = 0.0008
@@ -166,7 +167,7 @@ class RaceEngine:
         quali = self._qualify(drivers, form)
         # Best plan for each possible starting compound on this circuit.
         by_start = {c: best_plan(self.cfg.laps, self.track.pit_loss_s, wear_mult=self.track.wear_mult,
-                                 starts=[c]) for c in DRY}
+                                 starts=[c], require_two=not self.cfg.sprint) for c in DRY}
         wet_start = ideal_type(self.weather.wetness)
         best_cost = min(p.cost_s for p in by_start.values())
         for slot, d in enumerate(quali):
@@ -204,7 +205,8 @@ class RaceEngine:
         for row in q:
             if row["mistake"]:
                 self._event("quali", f"{row['code']} made a mistake on their qualifying lap: P{row['pos']}", row["code"])
-        self._event("start", f"Lights out! {self.cfg.laps} laps of {self.track.name}."
+        self._event("start", f"Lights out! {self.cfg.laps} laps of {self.track.name}"
+                    + (" in the Sprint." if self.cfg.sprint else ".")
                     + {"dry": "", "wet": " It's raining: a wet race.", "changeable": " Changeable weather expected.",
                        "showers": " Showers expected on and off.", "drying": " Wet start, but it should dry out."}[self.cfg.weather])
 
@@ -261,6 +263,11 @@ class RaceEngine:
     def neutral(self) -> str | None:
         """'sc', 'vsc' or None."""
         return "sc" if self.sc else "vsc" if self.vsc else None
+
+    def _needs_two(self, used: set[str]) -> bool:
+        """Two-compound rule: a Grand Prix needs two dry compounds (unless a wet tyre was used);
+        a sprint doesn't, so most cars run it without stopping."""
+        return not self.cfg.sprint and needs_second_compound(used)
 
     def _pit_mult(self) -> float:
         return SC_PIT_MULT if self.sc else VSC_PIT_MULT if self.vsc else 1.0
@@ -461,7 +468,7 @@ class RaceEngine:
             self.chequered = True
             car.finished = True
             car.finish_t = t_cross
-            if needs_second_compound(car.used):
+            if self._needs_two(car.used):
                 car.penalty_s = 10.0
                 self._event("penalty", f"{car.code} +10s: only one compound used", car.code)
             return
@@ -540,12 +547,12 @@ class RaceEngine:
             return {**out, "box": pct > 50, "saving_s": round(max(0.0, (pct - 50) / 10), 1)}
         m = self.track.wear_mult
         stay = best_plan(n, full, car.tyre, car.wear + m, car.used, wear_mult=m,
-                         require_two=needs_second_compound(car.used)).cost_s
+                         require_two=self._needs_two(car.used)).cost_s
         best_c, best = car.tyre, math.inf
         for c in DRY:
             used = car.used | {c}
             cost = now + best_plan(n, full, c, 0.0, used, wear_mult=m,
-                                   require_two=needs_second_compound(used)).cost_s
+                                   require_two=self._needs_two(used)).cost_s
             if cost < best:
                 best_c, best = c, cost
         if not math.isfinite(stay):
@@ -599,9 +606,9 @@ class RaceEngine:
             if compound is None and worn and car.tyre in WET:
                 compound = car.tyre                       # fresh set of the same wet tyre
             elif compound is None and dry_now and car.tyre in DRY and (
-                    worn or (needs_second_compound(car.used) and laps_left == 2)):
+                    worn or (self._needs_two(car.used) and laps_left == 2)):
                 plan = best_plan(laps_left, self.track.pit_loss_s, car.tyre, car.wear, car.used,
-                                 wear_mult=self.track.wear_mult, require_two=needs_second_compound(car.used))
+                                 wear_mult=self.track.wear_mult, require_two=self._needs_two(car.used))
                 compound = plan.stops[0][1] if plan.stops else ("H" if car.tyre != "H" else "M")
         if compound is None or laps_left < 1:
             return
@@ -623,7 +630,7 @@ class RaceEngine:
         if not car.controlled:
             # Re-plan the rest of the race from here (dry tyres only; in the wet the weather decides).
             car.plan = (best_plan(laps_left, self.track.pit_loss_s, compound, 0.0, car.used,
-                                  wear_mult=self.track.wear_mult, require_two=needs_second_compound(car.used))
+                                  wear_mult=self.track.wear_mult, require_two=self._needs_two(car.used))
                         if compound in DRY else Plan(None, [], 0.0))
             car.plan_base = car.lap
         self._event("pit", f"{car.code} pits: {COMPOUNDS[old].name} -> {COMPOUNDS[compound].name}"
@@ -634,7 +641,7 @@ class RaceEngine:
     def _dry_pick(self, car: Car, laps_left: int) -> str:
         eff = laps_left * self.track.wear_mult
         pick = "S" if eff <= 14 else "M" if eff <= 26 else "H"
-        if needs_second_compound(car.used | {pick}) and not car.used & set(WET):
+        if self._needs_two(car.used | {pick}) and not car.used & set(WET):
             pick = next(c for c in ("M", "H", "S") if c not in car.used)
         return pick
 
@@ -758,7 +765,7 @@ class RaceEngine:
         if car.tyre in WET:
             return {"code": code, "stops": [], "cost_s": 0.0, "stay_wet": True}
         plan = best_plan(laps_left, self.track.pit_loss_s, car.tyre, car.wear, car.used,
-                         wear_mult=self.track.wear_mult, require_two=needs_second_compound(car.used))
+                         wear_mult=self.track.wear_mult, require_two=self._needs_two(car.used))
         return {"code": code, "stops": [{"in_laps": n, "lap": car.lap + n, "compound": c} for n, c in plan.stops],
                 "cost_s": round(plan.cost_s, 1)}
 

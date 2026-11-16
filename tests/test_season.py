@@ -6,10 +6,11 @@ import pytest
 from sqlmodel import Session, select
 
 from server import repo
-from server.db import Season, SeasonResult, engine
+from server.db import Season, SeasonResult, SprintResult, engine
 from server.main import RaceSession
 from sim import RaceConfig, RaceEngine
-from sim.season import POINTS, ROUNDS, SCHEDULE, points_for, standings, track_for_round
+from sim.season import (POINTS, ROUNDS, SCHEDULE, SPRINT_POINTS, points_for, sprint_rounds, standings,
+                        track_for_round)
 from tests.conftest import ORIGIN, PASSWORD
 
 
@@ -48,20 +49,31 @@ def new_season(c, team="aurora", laps=5, weather="dry"):
     return r.json()
 
 
-def finish_round(email: str, season_id: int):
-    """Run the season's next round to the flag on the server side (fast) and save it."""
+def finish_session(email: str, season_id: int) -> str:
+    """Run the season's next session (a sprint or a Grand Prix) to the flag on the server side
+    (fast) and save it. Returns which session it was."""
     with Session(engine) as s:
         user = repo.user_by_email(s, email)
         season = repo.get_season(s, user, season_id)
+        session = repo.next_session(s, user, season)
         s.expunge(user)
         round_no = season.rounds_done + 1
     sess = RaceSession(ws=None, user=user)
     sess.team, sess.seed, sess.season_round = season.team, round_no, (season_id, round_no)
-    sess.engine = RaceEngine(RaceConfig(laps=5, seed=round_no, controlled_team=season.team,
-                                        track_id=track_for_round(round_no)))
+    sess.session = session
+    sess.engine = RaceEngine(RaceConfig(laps=3 if session == "sprint" else 5, seed=round_no,
+                                        controlled_team=season.team, track_id=track_for_round(round_no),
+                                        sprint=session == "sprint"))
     while not sess.engine.finished:
         sess.engine.step(5.0)
     sess._save_result()
+    return session
+
+
+def finish_round(email: str, season_id: int):
+    """Run the season's next round to the flag (the sprint first on a sprint weekend) and save it."""
+    if finish_session(email, season_id) == "sprint":
+        finish_session(email, season_id)
 
 
 def test_create_season_and_empty_standings(alice):
@@ -89,8 +101,11 @@ def test_full_season_scores_f1_points_and_finishes(alice):
     total = sum(x["points"] for x in d["drivers"])
     with Session(engine) as s:
         rows = s.exec(select(SeasonResult).where(SeasonResult.season_id == sid)).all()
-    assert len(rows) == ROUNDS * 20 and total <= ROUNDS * sum(POINTS)
-    assert total == sum(points_for(r.position, r.retired) for r in rows)
+        sprints = s.exec(select(SprintResult).where(SprintResult.season_id == sid)).all()
+    assert len(rows) == ROUNDS * 20 and len(sprints) == len(sprint_rounds()) * 20
+    assert total <= ROUNDS * sum(POINTS) + len(sprint_rounds()) * sum(SPRINT_POINTS)
+    assert total == (sum(points_for(r.position, r.retired) for r in rows)
+                     + sum(points_for(r.position, r.retired, sprint=True) for r in sprints))
     assert sum(t["points"] for t in d["teams"]) == total
     assert d["drivers"][0]["points"] >= d["drivers"][-1]["points"]
     # a finished season can't take a ninth round
@@ -173,7 +188,7 @@ def test_ws_season_round_uses_the_seasons_team_and_circuit(alice):
         init = ws.receive_json()
         assert init["type"] == "init" and init["team"] == "vantage" and init["laps"] == 7
         assert init["track"]["id"] == track_for_round(2)
-        assert init["season"] == {"id": sid, "round": 2, "rounds": ROUNDS}
+        assert init["season"] == {"id": sid, "round": 2, "rounds": ROUNDS, "session": "race"}
 
 
 def test_ws_refuses_another_users_season(alice, bob):

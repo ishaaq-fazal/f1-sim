@@ -12,7 +12,8 @@ from .config import settings
 from .db import Role, User, get_session
 from sim import TEAMS, default_grid
 from sim import career as career_rules
-from sim.season import POINTS, ROUNDS, SCHEDULE, round_forecast, standings, track_for_round
+from sim.season import (POINTS, ROUNDS, SCHEDULE, SPRINT_POINTS, is_sprint_round, round_forecast, sprint_laps,
+                        sprint_rounds, sprint_seed, standings, track_for_round)
 
 from .schemas import (JoinLeagueIn, LeagueDetailOut, LeagueIn, LeagueOut, LeagueRowOut, NextRoundOut, CareerIn, CareerOut, ContractOut, OfferIn, OfferOut, DriverStandingOut, RenewIn, SignIn, UpgradeIn, UpgradeOut, LoginIn, RaceOut, RoleIn, RoundOut, SeasonDetailOut, SeasonIn, SeasonOut,
                       SignupIn, TeamStandingOut, UserOut)
@@ -127,15 +128,22 @@ def my_season(season_id: int, user: User = Depends(current_user), s: Session = D
     if season is None:                 # same 404 for "not yours" and "missing"
         raise HTTPException(404, "Not found")
     rows = repo.season_results(s, user, season.id)
+    sprints = repo.sprint_results(s, user, season.id)
     rounds = []
     for n, track in enumerate(SCHEDULE, 1):
         rr = [r for r in rows if r.round == n]
+        sr = [r for r in sprints if r.round == n]
         winner = next((r.driver for r in rr if r.position == 1 and not r.retired), None)
-        rounds.append(RoundOut(round=n, track=track, done=bool(rr), winner=winner,
-                               your_points=sum(r.points for r in rr if r.team == season.team) if rr else None))
-    drivers, teams = standings(rows)
+        mine = sum(r.points for r in rr + sr if r.team == season.team)
+        rounds.append(RoundOut(
+            round=n, track=track, done=bool(rr), winner=winner, your_points=mine if rr or sr else None,
+            sprint=is_sprint_round(n), sprint_done=bool(sr),
+            sprint_winner=next((r.driver for r in sr if r.position == 1 and not r.retired), None),
+            your_sprint_points=sum(r.points for r in sr if r.team == season.team) if sr else None))
+    drivers, teams = standings(rows + sprints)
     return SeasonDetailOut(
-        season=SeasonOut.model_validate(season, from_attributes=True), points_system=list(POINTS), rounds=rounds,
+        season=SeasonOut.model_validate(season, from_attributes=True), points_system=list(POINTS),
+        sprint_points_system=list(SPRINT_POINTS), next_session=repo.next_session(s, user, season), rounds=rounds,
         drivers=[DriverStandingOut(pos=i, code=d.key, name=_DRIVER_NAMES.get(d.key, d.key), team=d.team,
                                    points=d.points, wins=d.wins, podiums=d.podiums)
                  for i, d in enumerate(drivers, 1)],
@@ -153,8 +161,13 @@ def next_round(season_id: int, user: User = Depends(current_user), s: Session = 
         raise HTTPException(400, "That season is over")
     n = season.rounds_done + 1
     track = track_for_round(n)
-    return NextRoundOut(round=n, track=track, laps=season.laps,
-                        forecast=round_forecast(repo.season_round_seed(season, n), track, season.laps))
+    seed = repo.season_round_seed(season, n)
+    if repo.next_session(s, user, season) == "sprint":
+        laps = sprint_laps(season.laps)
+        return NextRoundOut(round=n, track=track, laps=laps, session="sprint", sprint_weekend=True,
+                            forecast=round_forecast(sprint_seed(seed), track, laps))
+    return NextRoundOut(round=n, track=track, laps=season.laps, sprint_weekend=is_sprint_round(n),
+                        forecast=round_forecast(seed, track, season.laps))
 
 
 @router.delete("/seasons/{season_id}", status_code=204)
@@ -174,7 +187,7 @@ def _career_out(s: Session, user: User, c) -> CareerOut:
         blocker = str(e)
     if season.finished and st["status"] == "active":
         blocker = "Season over: start the next one"
-    drivers, teams = standings(repo.season_results(s, user, season.id))
+    drivers, teams = standings(repo.all_results(s, user, season.id))
     positions = {t.key: i for i, t in enumerate(teams, 1)}
     pts = next((t.points for t in teams if t.key == st["team"]), 0)
     progress = career_rules.objective_progress(st, positions, pts, season.rounds_done) \
@@ -188,6 +201,7 @@ def _career_out(s: Session, user: User, c) -> CareerOut:
     names = {t[0]: t[1] for t in TEAMS}
     return CareerOut(id=c.id, team=c.team, laps=c.laps, weather=c.weather, season_no=st["season_no"],
                      season_id=season.id, rounds_done=season.rounds_done, season_finished=season.finished,
+                     next_session=repo.next_session(s, user, season),
                      budget=st["budget"], income=st["income"], spent=st["spent"],
                      dev_points=st["dev_points"], factory_dp=career_rules.FACTORY_DP,
                      factory_cost=career_rules.FACTORY_COST, status=st["status"], warning=st["warning"],
@@ -334,7 +348,8 @@ def my_league(league_id: int, user: User = Depends(current_user), s: Session = D
     table = [LeagueRowOut(**{k: v for k, v in r.items() if k != "_member_id"},
                           team_name=_TEAM_NAMES.get(r["team"], r["team"]),
                           member_id=r["_member_id"] if owner and not r["you"] else None) for r in rows]
-    return LeagueDetailOut(league=_league_out(s, league, me), rounds=ROUNDS, schedule=list(SCHEDULE), table=table)
+    return LeagueDetailOut(league=_league_out(s, league, me), rounds=ROUNDS, schedule=list(SCHEDULE), table=table,
+                           sprint_rounds=sprint_rounds())
 
 
 @router.post("/leagues/{league_id}/leave", status_code=204)

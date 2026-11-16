@@ -380,7 +380,8 @@ function onMessage(m) {
     if ($("leagueDialog").open) $("leagueDialog").close();
     S.engPrev = null;
     Sound.startLights();
-    $("trackName").dataset.round = S.seasonRace ? `Round ${S.seasonRace.round}/${S.seasonRace.rounds} · ` : "";
+    $("trackName").dataset.round = S.seasonRace ? `Round ${S.seasonRace.round}/${S.seasonRace.rounds}` +
+      (S.seasonRace.session === "sprint" ? " Sprint · " : " · ") : "";
     S.disp.clear(); S.laps.clear(); S.charted.clear(); S.fastest = null; S.resultShown = false; S.boxDismissed.clear();
     S.paused = false; $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = !S.isHost;
     for (const b of $("speedSeg").children) b.disabled = !S.isHost;
@@ -611,7 +612,7 @@ function updateCard(c, st) {
       if (i) pred.append(", then ");
       pred.append(el("b", null, `box ${s.in_laps <= 1 ? "this lap" : `in ${s.in_laps} laps (lap ${s.lap})`} for ${S.compounds[s.compound].name}s`));
     });
-    if (c.used.length < 2 && !p.stops.length) pred.append(" (penalty risk)");
+    if (c.used.length < 2 && !p.stops.length && !(S.seasonRace && S.seasonRace.session === "sprint")) pred.append(" (penalty risk)");
   }
 }
 
@@ -682,15 +683,18 @@ async function showResults(st) {
   $("resultLede").textContent = `Your team: ${mine}. Winner: ${st.cars[0].name}.`;
   const season = S.seasonRace;
   $("resultStandingsBtn").hidden = !season;
+  const sprint = season && season.session === "sprint";
   $("againBtn").textContent = season && season.league ? "League table" : season && season.career ? "Team HQ"
-    : season && season.round < season.rounds ? "Next round" : "New race";
+    : sprint ? "On to the Grand Prix" : season && season.round < season.rounds ? "Next round" : "New race";
   if (season) {
     const pts = st.cars.filter((c) => c.controlled).reduce((a, c) => a + racePoints(c), 0);
     await loadSeason(season.id);
     const mineTeam = S.season && S.season.teams.find((t) => t.team === S.season.season.team);
-    $("resultLede").textContent += ` Round ${season.round} of ${season.rounds}: your team scored ${pts} point${pts === 1 ? "" : "s"}` +
+    $("resultLede").textContent += ` Round ${season.round} of ${season.rounds}${sprint ? " sprint" : ""}: your team scored ${pts} point${pts === 1 ? "" : "s"}` +
       (mineTeam ? ` and is P${mineTeam.pos} in the teams' championship on ${mineTeam.points}.` : ".") +
-      (season.career ? ` Prize money: $${(1 + 0.4 * pts).toFixed(1)}M and ${1 + Math.floor(pts / 10)} development points.` : "");
+      (season.career ? (sprint ? ` Prize money: $${(0.4 * pts).toFixed(1)}M.`
+        : ` Prize money: $${(1 + 0.4 * pts).toFixed(1)}M and ${1 + Math.floor(pts / 10)} development points.`) : "") +
+      (sprint ? " The Grand Prix is next, on the same circuit." : "");
   }
   body.replaceChildren(...st.cars.map((c) => {
     const tr = el("tr"); if (c.controlled) tr.classList.add("mine");
@@ -706,7 +710,13 @@ async function showResults(st) {
 
 // ---------------------------------------------------------------- season
 const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
-const racePoints = (c) => (c.retired ? 0 : POINTS[c.pos - 1] || 0);
+const racePoints = (c) => (c.retired ? 0 : ((S.seasonRace && S.seasonRace.session === "sprint")
+  ? SPRINT_POINTS() : POINTS)[c.pos - 1] || 0);
+// Sprint weekends: a short sprint race (top 8 score 8-7-6-5-4-3-2-1) before the Grand Prix.
+const SPRINT_POINTS = () => S.setup.sprint_points || [8, 7, 6, 5, 4, 3, 2, 1];
+const isSprintRound = (round) => (S.setup.sprint_rounds || []).includes(round);
+// The start button for a season's next session: its sprint or its Grand Prix.
+const nextLabel = (round, session) => session === "sprint" ? `Start sprint · round ${round}` : `Start round ${round}`;
 const teamName = (id) => (S.setup.teams.find((t) => t.id === id) || { name: id }).name;
 const teamColor = (id) => (S.setup.teams.find((t) => t.id === id) || { color: "#888" }).color;
 const trackName = (id) => (S.setup.tracks.find((t) => t.id === id) || { name: id }).name;
@@ -742,10 +752,13 @@ function renderSeasonBox() {
   if (sz && !sz.finished) {
     const next = sz.rounds_done + 1;
     const mine = myTeamStanding();
+    const session = S.season.next_session;
     text.append(el("b", null, sz.league_id ? `League season with ${teamName(sz.team)}` : `Season with ${teamName(sz.team)}`),
-      document.createTextNode(` · round ${next} of ${ROUNDS()} at ${trackName(S.season.rounds[next - 1].track)} · ${sz.laps} laps · random weather` +
+      document.createTextNode(` · round ${next} of ${ROUNDS()} at ${trackName(S.season.rounds[next - 1].track)}` +
+        (session === "sprint" ? " · sprint weekend: sprint first" : isSprintRound(next) ? " · sprint weekend: Grand Prix next" : "") +
+        ` · ${sz.laps} laps · random weather` +
         (mine ? ` · teams' championship P${mine.pos} on ${mine.points} pts` : "")));
-    const go = el("button", "btn primary", sz.league_id ? "Race lobby" : `Start round ${next}`); go.type = "button";
+    const go = el("button", "btn primary", sz.league_id ? "Race lobby" : nextLabel(next, session)); go.type = "button";
     go.addEventListener("click", () => {
       if (sz.league_id) { $("startDialog").close(); openLobby(sz.league_id); }   // league rounds are raced together
       else startSeasonRound(sz.id);
@@ -777,6 +790,7 @@ function renderSeasonBox() {
   } else {
     text.append(el("b", null, "Season mode"),
       document.createTextNode(`: ${ROUNDS()} races, one at every circuit, scored with F1 points (25-18-15-12-10-8-6-4-2-1). ` +
+        `Rounds ${(S.setup.sprint_rounds || []).join(", ")} are sprint weekends: a short sprint first, scoring 8-7-6-5-4-3-2-1 for the top 8. ` +
         "Uses the team and laps you pick below, and you keep that team all season. The weather is random each round."));
     const go = el("button", "btn", "Start a season"); go.type = "button";
     go.addEventListener("click", startSeason);
@@ -825,13 +839,15 @@ async function renderForecast(seasonId) {
   const n = await r.json();
   const f = n.forecast;
   const head = el("div", "fc-head");
-  head.append(el("b", null, `Round ${n.round} · ${trackName(n.track)} · ${n.laps} laps`),
+  head.append(el("b", null, `Round ${n.round}${n.session === "sprint" ? " Sprint" : n.sprint_weekend ? " Grand Prix" : ""} · ${trackName(n.track)} · ${n.laps} laps`),
     el("span", `fc-summary ${f.wet_start ? "wet" : f.rain_chance >= 45 ? "maybe" : "dry"}`, f.summary));
   const row = el("div", "fc-row");
   row.append(el("span", null, `Chance of rain during the race: ${f.rain_chance}%`),
     el("span", null, `Track ${Math.round(f.track_wetness * 100)}% wet`),
     el("span", null, "Next 20 min: " + f.next_20_min.map((x) => `${x.in_min}m ${x.chance}%`).join(" · ")));
-  const tip = el("p", "rules", f.wet_start
+  const tip = el("p", "rules", n.session === "sprint"
+    ? "Sprint: a short race with no compulsory pit stop, so pick one tyre that lasts the distance. The top 8 score 8-7-6-5-4-3-2-1."
+    : f.wet_start
     ? "Tip: Intermediates or Wets for a wet start; slicks will be very slow until it dries."
     : f.rain_chance >= 45 ? "Tip: rain may come, so a tyre that lasts can save a stop before you switch to Inters."
     : "Tip: a dry race, so plan two different dry compounds or take a 10 s penalty.");
@@ -851,10 +867,12 @@ function renderStandings() {
   for (const b of $("standingsSeg").children) b.classList.toggle("on", b.dataset.v === S.standingsTab);
   $("standingsLede").textContent = `${teamName(sz.team)} · ${sz.finished ? "season complete" : `after ${sz.rounds_done} of ${ROUNDS()} rounds`}` +
     ` · ${sz.laps} laps · random weather each round`;
-  $("standingsRules").textContent = `Points for P1 to P10: ${d.points_system.join(", ")}. Retirements score nothing. Ties go to the most wins, then most 2nd places.`;
+  $("standingsRules").textContent = `Points for P1 to P10: ${d.points_system.join(", ")}. ` +
+    `Sprint weekends (rounds ${(S.setup.sprint_rounds || []).join(", ")}) add a sprint race first: ${(d.sprint_points_system || SPRINT_POINTS()).join(", ")} for P1 to P8. ` +
+    "Retirements score nothing. Ties go to the most Grand Prix wins, then most 2nd places.";
   const nb = $("nextRoundBtn");
   nb.hidden = sz.finished;
-  nb.textContent = `Go to round ${sz.rounds_done + 1}`;
+  nb.textContent = d.next_session === "sprint" ? `Go to the round ${sz.rounds_done + 1} sprint` : `Go to round ${sz.rounds_done + 1}`;
   const head = (...cols) => { const tr = el("tr"); cols.forEach(([t, cls]) => tr.append(el("th", cls, t))); return tr; };
   const bar = (team) => { const td = el("td", "teambar"); const i = el("i"); i.style.background = teamColor(team); td.append(i); return td; };
   let rows = [];
@@ -880,10 +898,16 @@ function renderStandings() {
     $("standingsHead").replaceChildren(head(["Rd"], ["Circuit"], ["Winner"], ["Your pts", "r"]));
     rows = d.rounds.map((x) => {
       const tr = el("tr");
-      tr.classList.add(x.done ? "done" : x.round === sz.rounds_done + 1 ? "next" : "todo");
-      tr.append(el("td", null, String(x.round)), el("td", null, trackName(x.track)),
-        el("td", null, x.done ? (names.get(x.winner) || x.winner || "–") : x.round === sz.rounds_done + 1 ? "next" : ""),
-        el("td", "r pts", x.done ? String(x.your_points) : ""));
+      const isNext = x.round === sz.rounds_done + 1;
+      tr.classList.add(x.done ? "done" : isNext ? "next" : "todo");
+      const circuit = el("td", null, trackName(x.track));
+      if (x.sprint) circuit.append(el("span", "sprint-tag", "Sprint"));
+      const who = (code) => names.get(code) || code || "–";
+      let winner = x.done ? who(x.winner) : isNext ? "next" : "";
+      if (x.sprint && x.sprint_done) winner = (x.done ? winner : isNext ? "GP next" : "") + ` · sprint: ${who(x.sprint_winner)}`;
+      tr.append(el("td", null, String(x.round)), circuit, el("td", null, winner),
+        el("td", "r pts", x.your_points != null ? String(x.your_points) +
+          (x.your_sprint_points ? ` (${x.your_sprint_points} sprint)` : "") : ""));
       return tr;
     });
   }
@@ -915,14 +939,15 @@ function renderCareerBox() {
   const text = el("div", "stext");
   const buttons = [];
   if (c) {
-    const where = c.season_finished ? "season over" : `round ${c.rounds_done + 1} of ${ROUNDS()} at ${trackName(track8(c.rounds_done + 1))}`;
+    const where = c.season_finished ? "season over" : `round ${c.rounds_done + 1} of ${ROUNDS()} at ${trackName(track8(c.rounds_done + 1))}` +
+      (c.next_session === "sprint" ? " (sprint first)" : isSprintRound(c.rounds_done + 1) ? " (Grand Prix next)" : "");
     const status = c.status === "sacked" ? "sacked: job offers waiting" : c.status === "over" ? "career over" : where;
     text.append(el("b", null, `Career with ${teamName(c.team)}`),
       document.createTextNode(` · season ${c.season_no} · ${status} · budget ${money(c.budget)} · ${c.dev_points} DP`));
     const hq = el("button", c.ready ? "btn" : "btn primary", "Team HQ"); hq.type = "button";
     hq.addEventListener("click", () => { $("startDialog").close(); openHQ(); });
     if (c.ready) {
-      const go = el("button", "btn primary", `Start round ${c.rounds_done + 1}`); go.type = "button";
+      const go = el("button", "btn primary", nextLabel(c.rounds_done + 1, c.next_session)); go.type = "button";
       go.addEventListener("click", startCareerRound);
       buttons.push(go);
     }
@@ -1062,7 +1087,7 @@ function renderHQ() {
   go.disabled = false;
   go.hidden = !working;
   if (c.season_finished) go.textContent = `End season ${c.season_no} · board review`;
-  else go.textContent = `Start round ${c.rounds_done + 1} · ${trackName(track8(c.rounds_done + 1))}`;
+  else go.textContent = `${nextLabel(c.rounds_done + 1, c.next_session)} · ${trackName(track8(c.rounds_done + 1))}`;
   if (!c.ready && !c.season_finished) { go.disabled = true; $("hqError").textContent = c.blocker; }
 }
 

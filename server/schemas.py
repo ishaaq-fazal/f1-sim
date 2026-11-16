@@ -110,6 +110,8 @@ class SetupOut(BaseModel):
     laps_default: int
     speeds: list[int]
     schedule: list[str]            # season calendar: circuit id for each round
+    sprint_rounds: list[int] = []  # rounds that are sprint weekends
+    sprint_points: list[int] = []
 
 
 # ------------------------------------------------------------------ accounts
@@ -211,7 +213,11 @@ class RoundOut(BaseModel):
     track: str
     done: bool
     winner: str | None = None        # driver code
-    your_points: int | None = None
+    your_points: int | None = None   # Grand Prix and sprint together
+    sprint: bool = False             # a sprint weekend
+    sprint_done: bool = False
+    sprint_winner: str | None = None
+    your_sprint_points: int | None = None
 
 
 class DriverStandingOut(BaseModel):
@@ -248,13 +254,17 @@ class ForecastOut(BaseModel):
 class NextRoundOut(BaseModel):
     round: int
     track: str
-    laps: int
+    laps: int                        # laps of the session raced next
     forecast: ForecastOut
+    session: Literal["race", "sprint"] = "race"
+    sprint_weekend: bool = False
 
 
 class SeasonDetailOut(BaseModel):
     season: SeasonOut
     points_system: list[int]
+    sprint_points_system: list[int] = []
+    next_session: Literal["race", "sprint"] | None = None
     rounds: list[RoundOut]
     drivers: list[DriverStandingOut]
     teams: list[TeamStandingOut]
@@ -343,6 +353,7 @@ class CareerOut(BaseModel):
     season_id: int
     rounds_done: int
     season_finished: bool
+    next_session: Literal["race", "sprint"] | None = None
     budget: float
     income: float
     spent: dict[str, float]
@@ -416,3 +427,4 @@ class LeagueDetailOut(BaseModel):
     rounds: int
     schedule: list[str]
     table: list[LeagueRowOut]
+    sprint_rounds: list[int] = []

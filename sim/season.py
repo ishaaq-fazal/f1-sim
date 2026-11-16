@@ -1,4 +1,6 @@
 """Season mode: a 10-round championship, one race at each circuit, scored with F1 points.
+Three rounds are sprint weekends: a short sprint race (top 8 score 8-7-6-5-4-3-2-1) before the
+Grand Prix.
 
 Pure Python (no web or database code), so the rules can be tested on their own.
 """
@@ -16,10 +18,33 @@ ROUNDS = len(SCHEDULE)
 POINTS: tuple[int, ...] = (25, 18, 15, 12, 10, 8, 6, 4, 2, 1)
 
 
-def points_for(position: int, retired: bool = False) -> int:
-    if retired or position < 1 or position > len(POINTS):
+# Sprint weekends: a short race on Saturday before the Grand Prix, at circuits where passing is
+# possible (rounds 3, 6 and 9, spread through the year).
+SPRINT_TRACKS: tuple[str, ...] = ("riverside", "glacier", "saltmarsh")
+# Points for P1..P8 in a sprint, as in Formula 1.
+SPRINT_POINTS: tuple[int, ...] = (8, 7, 6, 5, 4, 3, 2, 1)
+SPRINT_LAP_SHARE = 1 / 3          # an F1 sprint is about a third of the Grand Prix distance
+MIN_SPRINT_LAPS = 4
+
+
+def points_for(position: int, retired: bool = False, sprint: bool = False) -> int:
+    table = SPRINT_POINTS if sprint else POINTS
+    if retired or position < 1 or position > len(table):
         return 0
-    return POINTS[position - 1]
+    return table[position - 1]
+
+
+def is_sprint_round(round_no: int) -> bool:
+    return 1 <= round_no <= ROUNDS and SCHEDULE[round_no - 1] in SPRINT_TRACKS
+
+
+def sprint_rounds() -> list[int]:
+    return [n for n in range(1, ROUNDS + 1) if is_sprint_round(n)]
+
+
+def sprint_laps(race_laps: int) -> int:
+    """Sprint distance for a season raced over race_laps laps."""
+    return max(MIN_SPRINT_LAPS, round(race_laps * SPRINT_LAP_SHARE))
 
 
 def track_for_round(round_no: int) -> str:
@@ -53,7 +78,9 @@ class Standing:
 def standings(rows) -> tuple[list[Standing], list[Standing]]:
     """Drivers' and teams' standings from result rows.
 
-    Each row needs .driver, .team, .position, .retired and .points attributes."""
+    Each row needs .driver, .team, .position, .retired and .points attributes. Rows with a true
+    .sprint attribute are sprint results: their points count, but wins and countback only use
+    Grand Prix finishes (as in F1)."""
     drivers: dict[str, Standing] = {}
     teams: dict[str, Standing] = {}
     for r in rows:
@@ -61,6 +88,8 @@ def standings(rows) -> tuple[list[Standing], list[Standing]]:
         t = teams.setdefault(r.team, Standing(r.team, r.team))
         d.points += r.points
         t.points += r.points
+        if getattr(r, "sprint", False):
+            continue
         if not r.retired:
             d.finishes.append(r.position)
             t.finishes.append(r.position)
@@ -73,6 +102,12 @@ def standings(rows) -> tuple[list[Standing], list[Standing]]:
 # forecast and the race always agree) but nobody can choose it.
 # Roughly one round in three is fully dry; the rest bring rain in some form.
 WEATHER_ODDS = (("dry", 0.32), ("changeable", 0.24), ("showers", 0.18), ("drying", 0.12), ("wet", 0.14))
+
+
+def sprint_seed(seed: int) -> int:
+    """Seed for a round's sprint, made from the round's seed: the sprint has its own weather and
+    race, fixed in advance like the Grand Prix's."""
+    return random.Random(seed ^ 0x5B_21A7).randrange(2**31)
 
 
 def round_weather(seed: int) -> str:
