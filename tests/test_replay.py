@@ -108,7 +108,7 @@ def test_replay_is_deterministic_and_json_safe():
     text = json.dumps(a)
     assert "advice" not in text and len(text) < 400_000
     assert set(a) == {"type", "track", "total_laps", "frame_s", "cars", "frames", "lap_t", "gaps", "positions",
-                      "laps", "events", "finished"}
+                      "laps", "events", "commentary", "highlights", "finished"}
     assert a["events"] and all({"t", "lap", "kind", "text", "code"} == set(ev) for ev in a["events"])
 
 

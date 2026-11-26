@@ -65,6 +65,11 @@
       <p class="hint">Click a driver to add or remove them from the lap chart.</p>
     </section>
 
+    <section class="panel comm-panel" aria-label="Commentary">
+      <div class="panel-head"><h2>Commentary</h2><span class="hint"><i class="sw mine"></i> your team</span></div>
+      <ol class="comm" id="comm" aria-live="polite"></ol>
+    </section>
+
     <section class="panel wall-panel">
       <div class="panel-head"><h2>Your pit wall</h2><span class="team-chip" id="teamChip"></span></div>
       <div class="wall" id="wall"></div>
@@ -195,6 +200,10 @@
     <form method="dialog">
       <h1>Classification</h1>
       <p class="lede" id="resultLede"></p>
+      <section class="moments" id="moments" aria-label="Key moments" hidden>
+        <h2>Key moments</h2>
+        <ol id="momentList"></ol>
+      </section>
       <table class="tower results"><tbody id="resultBody"></tbody></table>
       <div class="row end">
         <button class="btn ghost" value="close">Close</button>

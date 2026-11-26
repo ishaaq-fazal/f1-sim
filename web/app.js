@@ -387,7 +387,7 @@ function onMessage(m) {
     S.paused = false; $("pauseBtn").textContent = "Pause"; $("pauseBtn").disabled = !S.isHost;
     for (const b of $("speedSeg").children) b.disabled = !S.isHost;
     $("speedSeg").title = S.isHost ? "" : "The league owner controls the race speed";
-    $("log").replaceChildren();
+    $("log").replaceChildren(); clearComm(); $("moments").hidden = true;
     $("trackName").textContent = `${$("trackName").dataset.round}${m.track.name} · ${(m.track.length_m / 1000).toFixed(2)} km`;
     const t = S.setup.teams.find((x) => x.id === m.team);
     const chip = $("teamChip"); chip.textContent = t.name; chip.style.background = t.color; chip.style.color = "#000";
@@ -648,11 +648,28 @@ function updateBoxCall(card, c, st, done) {
 
 // ---------------------------------------------------------------- log + results
 function addLog(ev) {
+  if (ev.kind === "comm") { addComm(ev); return; }
   const li = el("li", `k-${ev.kind}`);
   li.append(el("span", "lapno", ev.lap !== "" ? `L${ev.lap}` : ""), el("span", null, ev.text));
   const log = $("log");
   log.prepend(li);
   while (log.children.length > 200) log.lastChild.remove();
+}
+
+// TV-style commentary, newest first. Lines about the player's own team are highlighted.
+function addComm(ev) {
+  const feed = $("comm");
+  const empty = feed.querySelector(".empty");
+  if (empty) empty.remove();
+  const li = el("li", `t-${ev.tone || "normal"}`);
+  if ((ev.teams || []).includes(S.team)) li.classList.add("mine");
+  li.append(el("span", "lapno", ev.lap !== "" ? `L${ev.lap}` : ""), el("span", "txt", ev.text));
+  feed.prepend(li);
+  while (feed.children.length > 150) feed.lastChild.remove();
+}
+
+function clearComm() {
+  $("comm").replaceChildren(el("li", "empty", "Commentary starts with the lights out."));
 }
 
 // Qualifying result before the lights go out. The race waits (paused) until you start it;

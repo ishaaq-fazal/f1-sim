@@ -363,7 +363,34 @@ function onReplay(r) {
   S.replay = r;
   $("replayBtn").hidden = false;
   $("mapReplayBtn").hidden = false;
+  renderMoments(r.highlights || []);
   updateChart();
+}
+
+// Key moments card above the results: each highlight jumps the replay to just before it.
+function renderMoments(list) {
+  const box = $("moments");
+  box.hidden = !list.length;
+  $("momentList").replaceChildren(...list.map((h) => {
+    const li = el("li", `k-${h.kind}`);
+    if ((h.teams || []).includes(S.team)) li.classList.add("mine");
+    const title = el("div", "mt", h.title);
+    title.append(el("span", "lapno", `L${h.lap}`));
+    const watch = el("button", "btn small watch", "Watch");
+    watch.type = "button";
+    watch.setAttribute("aria-label", `Watch ${h.title.toLowerCase()} in the replay`);
+    watch.addEventListener("click", () => watchMoment(h));
+    li.append(title, watch, el("div", "mx", h.text));
+    return li;
+  }));
+}
+
+function watchMoment(h) {
+  if (!S.replay) return;
+  startReplay();
+  replaySeek(h.t);
+  document.querySelector(".track-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  S.rp.playing = true; S.rp.last = performance.now(); $("rpPlay").textContent = "Pause";
 }
 
 function frameAt(t) {
@@ -442,6 +469,7 @@ function startReplay() {
   if ($("resultDialog").open) $("resultDialog").close();
   S.rp.active = true; S.rp.t = 0; S.rp.playing = true; S.rp.last = performance.now(); S.rp.logCount = -1;
   S.rp.savedLog = [...$("log").children];
+  S.rp.savedComm = [...$("comm").children]; S.rp.commCount = -1;
   $("replayBar").hidden = false; $("mapReplayBtn").hidden = true;
   document.querySelector(".wall-panel").classList.add("replaying");
   $("rpPlay").textContent = "Pause";
@@ -454,6 +482,7 @@ function exitReplay() {
   $("replayBar").hidden = true; $("mapReplayBtn").hidden = !S.replay;
   document.querySelector(".wall-panel").classList.remove("replaying");
   if (S.rp.savedLog) $("log").replaceChildren(...S.rp.savedLog);
+  if (S.rp.savedComm) $("comm").replaceChildren(...S.rp.savedComm);
   if (S.state) { renderHeader(S.state); renderTower(S.state); }
   updateChart();
 }
@@ -513,6 +542,13 @@ function renderReplayPanels(force) {
     S.rp.logCount = evs.length;
     $("log").replaceChildren();
     evs.slice(-200).forEach(addLog);
+  }
+  // ...and the commentary, so it follows the replay too.
+  const comm = (r.commentary || []).filter((e) => e.t <= S.rp.t);
+  if (force || comm.length !== S.rp.commCount) {
+    S.rp.commCount = comm.length;
+    clearComm();
+    comm.slice(-150).forEach(addComm);
   }
   if (chart) chart.draw();
 }

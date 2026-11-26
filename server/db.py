@@ -1,4 +1,4 @@
-"""Database tables. Only server/repo.py should query these."""
+ """Database tables. Only server/repo.py should query these."""
 from __future__ import annotations
 
 from datetime import datetime, timezone

@@ -11,11 +11,13 @@ From those, this builds:
 - positions: per car, its grid slot then its place crossing the line on each lap;
 - laps: per car, [lap, race time, lap time, tyre, pitted] for every completed lap;
 - events: the race-control log with race times, and the frames for the track map
-  ([t, distance per car, status letter per car, race flag g/s/v]).
+  ([t, distance per car, status letter per car, race flag g/s/v]);
+- commentary: every commentary line, so the feed can follow the replay;
+- highlights: the key moments of the race (sim/highlights.py), once it's finished.
 """
 from __future__ import annotations
 
-from .engine import REPLAY_FRAME_S
+from .engine import REPLAY_FRAME_S, public_event
 
 
 def lap_table(cars) -> tuple[list[float], dict[str, list[float | None]], dict[str, list[int | None]]]:
@@ -46,6 +48,7 @@ def lap_table(cars) -> tuple[list[float], dict[str, list[float | None]], dict[st
 
 
 def build_replay(engine) -> dict:
+    from .highlights import build_highlights
     cars = engine.cars
     lap_t, gaps, positions = lap_table(cars)
     return {
@@ -60,6 +63,8 @@ def build_replay(engine) -> dict:
         "gaps": gaps,
         "positions": positions,
         "laps": {c.code: [[r["lap"], r["t"], r["time"], r["tyre"], r["pit"]] for r in c.laps] for c in cars},
-        "events": [{k: e[k] for k in ("t", "lap", "kind", "text", "code")} for e in engine.event_log],
+        "events": [public_event(e) for e in engine.event_log if e["kind"] != "comm"],
+        "commentary": [public_event(e) for e in engine.event_log if e["kind"] == "comm"],
+        "highlights": build_highlights(engine),
         "finished": engine.finished,
     }

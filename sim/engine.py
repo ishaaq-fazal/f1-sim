@@ -163,6 +163,11 @@ class RaceEngine:
         self._replay: dict | None = None
         self.cars: list[Car] = []
         self.qualifying: list[dict] = []
+        self.pit_log: list[dict] = []
+        self._finishers: list[Car] = []   # cars that took the flag this substep, not yet announced     # every stop: who, when, how long, places before/after
+        # TV-style commentary: reads the race but never changes it (its own random stream).
+        from .commentary import Commentator
+        self.commentary = Commentator(self)
         self._setup(drivers or default_grid())
         self._record_frame()              # the grid, at t = 0
 
@@ -283,11 +288,18 @@ class RaceEngine:
         slow = SC_SLOW if self.sc else VSC_SLOW if self.vsc else 1.0
         return self.track.pit_loss_s * self._pit_mult() / slow
 
-    def _event(self, kind: str, text: str, code: str | None = None) -> None:
+    def _event(self, kind: str, text: str, code: str | None = None, **extra) -> None:
+        """Log a race-control event. Extra fields (who was passed, stop times...) are for the
+        commentary and highlights; the race-control log only shows the text."""
         lap = min(self.cfg.laps, max(1, self.leader().lap + 1)) if self.cars else 1
-        ev = {"t": round(self.t, 1), "lap": lap, "kind": kind, "text": text, "code": code}
+        ev = {"t": round(self.t, 1), "lap": lap, "kind": kind, "text": text, "code": code, **extra}
         self.events.append(ev)
         self.event_log.append(ev)
+        if kind != "comm" and self.cars:
+            self.commentary.on_event(ev)
+
+    def position(self, car: Car) -> int:
+        return self.order().index(car) + 1
 
     # ------------------------------------------------------------- commands
     def car(self, code: str) -> Car | None:
@@ -325,16 +337,19 @@ class RaceEngine:
         if (ahead.dist - behind.dist) * ahead.lap_target > SWAP_MAX_GAP_S:
             return f"They're too far apart to swap (more than {SWAP_MAX_GAP_S:.0f}s)"
         behind.last_order_lap = ahead.last_order_lap = behind.lap
-        self._event("radio", f"Team to {ahead.code}: let {behind.code} through", ahead.code)
+        self._event("radio", f"Team to {ahead.code}: let {behind.code} through", ahead.code,
+                    order="given", other=behind.code)
         if self.inc_rng.random() < self.swap_chance(ahead):
             ahead.yield_to, ahead.yield_until = behind.code, self.t + ahead.lap_target * 1.2
             behind.passing = ahead.code
-            self._event("radio", f"{ahead.code}: \"Copy, letting {behind.code} by.\"", ahead.code)
+            self._event("radio", f"{ahead.code}: \"Copy, letting {behind.code} by.\"", ahead.code,
+                        order="obeyed", other=behind.code)
         else:
             reply = ("No way, I'm faster!" if ahead.driver.loyalty < 0.45 else
                      "Give me a lap, I can pull away." if ahead.driver.loyalty < 0.7 else
                      "Sorry, couldn't find a safe place.")
-            self._event("radio", f"{ahead.code} ignores the order: \"{reply}\"", ahead.code)
+            self._event("radio", f"{ahead.code} ignores the order: \"{reply}\"", ahead.code,
+                        order="ignored", other=behind.code)
         return None
 
     def swap_chance(self, ahead: Car) -> float:
@@ -395,7 +410,7 @@ class RaceEngine:
                 car.pit_timer -= dt
                 if car.pit_timer <= 0:
                     car.pit_timer = 0
-                    self._event("pit-out", f"{car.code} rejoins on {COMPOUNDS[car.tyre].name}s", car.code)
+                    self._pit_out(car)
                 continue
             rate = sc_rates[car.code] if self.sc else 1.0 / (car.lap_target * slow)
             if car.yield_to:
@@ -410,6 +425,18 @@ class RaceEngine:
         for car in self.cars:
             if car.running and car.pit_timer <= 0:
                 self._sectors_and_line(car)
+        if self._finishers:
+            self._announce_finishers()
+
+    def _announce_finishers(self) -> None:
+        """Cars can cross the line in the same substep; call them in the order they crossed."""
+        cars, self._finishers = sorted(self._finishers, key=lambda c: c.finish_t), []
+        for car in cars:
+            if not any(e["kind"] == "finish" for e in self.event_log):
+                self._event("finish", f"Chequered flag! {car.code} wins", car.code)
+            if car.penalty_s:
+                self._event("penalty", f"{car.code} +10s: only one compound used", car.code)
+            self.commentary.on_finish(car)
 
     def _sc_rates(self) -> dict[str, float]:
         """Laps per second for each car behind the Safety Car: the leader follows the SC and
@@ -450,7 +477,8 @@ class RaceEngine:
             if rate > 0 and self.rng.random() < 1 - math.exp(-rate * dt):
                 car.passing = ahead.code
                 if ahead.dist - car.dist < 0.45:
-                    self._event("overtake", f"{car.code} passes {ahead.code}" + (" with DRS" if drs else ""), car.code)
+                    self._event("overtake", f"{car.code} passes {ahead.code}" + (" with DRS" if drs else ""), car.code,
+                                other=ahead.code, pos=self.position(ahead), drs=drs)
                 continue
             car.frac = ahead.dist - gap_laps - car.lap   # held up behind
 
@@ -498,32 +526,34 @@ class RaceEngine:
                     self._event("fastest", f"Fastest lap: {car.code} {fmt_time(lap_time)}", car.code)
 
         if car.lap >= self.cfg.laps or self.chequered:
-            if not self.chequered:
-                self._event("finish", f"Chequered flag! {car.code} wins", car.code)
             self.chequered = True
             car.finished = True
             car.finish_t = t_cross
             if self._needs_two(car.used):
                 car.penalty_s = 10.0
-                self._event("penalty", f"{car.code} +10s: only one compound used", car.code)
+            self._finishers.append(car)      # announced in crossing order at the end of the step
             return
 
         if self.rng.random() < self.cfg.dnf_chance_per_lap * (self.cfg.team_dnf or {}).get(car.driver.team, 1.0):
+            pos = self.position(car)
             car.retired = True
-            self._event("dnf", f"{car.code} retires with a power unit failure", car.code)
+            self._event("dnf", f"{car.code} retires with a power unit failure", car.code, pos=pos)
             if self.inc_rng.random() < 0.4:      # stopped somewhere awkward
-                self._incident("stopped", f"{car.code} has stopped on track")
+                self._incident("stopped", f"{car.code} has stopped on track", car.code)
             return
 
         crash = (self.cfg.crash_chance_per_lap * (1 + 3 * self.weather.wetness)
                  * (1.6 if car.mode == "push" else 1.0) * (0.2 if self.neutral else 1.0))
         if self.inc_rng.random() < crash:
+            pos = self.position(car)
             car.retired = True
-            self._event("crash", f"{car.code} crashes out!", car.code)
-            self._incident("crash", f"{car.code} has crashed")
+            self._event("crash", f"{car.code} crashes out!", car.code, pos=pos)
+            self._incident("crash", f"{car.code} has crashed", car.code)
             return
 
         self._race_control(car)
+        if car.lap == self.leader_lap_seen and car is self.leader():
+            self.commentary.on_leader_lap(car.lap)
         if not car.controlled:
             self._ai_radio(car)
         self._maybe_pit(car)
@@ -538,16 +568,16 @@ class RaceEngine:
             if car.lap >= self.sc_end_lap:
                 self.sc, self.sc_in = False, False
                 self.drs_after_t = self.t + self.track.base_lap_s
-                self._event("green", "Green flag! The Safety Car is in and racing resumes")
+                self._event("green", "Green flag! The Safety Car is in and racing resumes", restart=True)
             elif car.lap == self.sc_end_lap - 1 and not self.sc_in:
                 self.sc_in = True
-                self._event("sc", "Safety Car in this lap")
+                self._event("sc", "Safety Car in this lap", sc_in=True)
             return
         if (3 <= car.lap and laps_left > 3
                 and self.inc_rng.random() < self.cfg.vsc_chance_per_lap * (1 + 3 * self.weather.rain)):
             self._incident("debris", "debris on track")
 
-    def _incident(self, kind: str, reason: str) -> None:
+    def _incident(self, kind: str, reason: str, code: str | None = None) -> None:
         """Something on track: bring out a Safety Car or a VSC, if one isn't out already."""
         lead = self.leader()
         if (self.neutral or self.chequered or self.vsc_count + self.sc_count >= MAX_NEUTRAL
@@ -557,11 +587,13 @@ class RaceEngine:
             self.sc, self.sc_in = True, False
             self.sc_end_lap = lead.lap + self.inc_rng.randint(3, 5)
             self.sc_count += 1
-            self._event("sc", f"Safety Car deployed: {reason}. The field will bunch up; pit stops are cheap")
+            self._event("sc", f"Safety Car deployed: {reason}. The field will bunch up; pit stops are cheap",
+                        cause=kind, who=code)
         else:
             self.vsc_until = self.t + self.track.base_lap_s * self.inc_rng.uniform(1.5, 2.5)
             self.vsc_count += 1
-            self._event("vsc", f"Virtual Safety Car deployed: {reason}. Gaps frozen; pit stops a bit cheaper")
+            self._event("vsc", f"Virtual Safety Car deployed: {reason}. Gaps frozen; pit stops a bit cheaper",
+                        cause=kind, who=code)
         for c in self.cars:
             c.advice = self.box_advice(c) if c.running else None
 
@@ -650,9 +682,14 @@ class RaceEngine:
         loss = self.track.pit_loss_s * self._pit_mult()
         stationary = 2.3 + abs(self.rng.gauss(0, 0.3))
         stationary = max(1.6, stationary - (self.cfg.team_pit or {}).get(car.driver.team, 0.0))
-        if self.rng.random() < 0.04:
+        slow = self.rng.random() < 0.04
+        if slow:
             stationary += self.rng.uniform(2, 6)
             self._event("slow-stop", f"Slow stop for {car.code}! {stationary:.1f}s", car.code)
+        self.pit_log.append({"code": car.code, "lap": car.lap, "race_lap": min(self.cfg.laps, self.leader().lap + 1),
+                             "t": round(self.t, 1), "stationary": round(stationary, 1),
+                             "slow": slow, "neutral": self.neutral, "from_pos": self.position(car), "rejoin_pos": None,
+                             "old": car.tyre, "new": compound, "order": [c.code for c in self.order()]})
         car.pit_timer = loss - 2.3 + stationary
         car.pit_this_lap = True
         old = car.tyre
@@ -670,7 +707,14 @@ class RaceEngine:
             car.plan_base = car.lap
         self._event("pit", f"{car.code} pits: {COMPOUNDS[old].name} -> {COMPOUNDS[compound].name}"
                     + (" (cheap stop under the Safety Car)" if self.sc else
-                       " (cheap stop under VSC)" if self.vsc else ""), car.code)
+                       " (cheap stop under VSC)" if self.vsc else ""), car.code, stop=self.pit_log[-1])
+
+    def _pit_out(self, car: Car) -> None:
+        stop = next((p for p in reversed(self.pit_log) if p["code"] == car.code), None)
+        pos = self.position(car)
+        if stop is not None:
+            stop["rejoin_pos"] = pos
+        self._event("pit-out", f"{car.code} rejoins on {COMPOUNDS[car.tyre].name}s", car.code, pos=pos, stop=stop)
 
     # -------------------------------------------------------------- weather
     def _dry_pick(self, car: Car, laps_left: int) -> str:
@@ -712,7 +756,8 @@ class RaceEngine:
         if raining != self._rain_on:
             self._rain_on = raining
             self._event("weather", f"Rain is falling ({rain_label(self.weather.rain)})" if raining
-                        else "The rain has stopped. The track will start to dry")
+                        else "The rain has stopped. The track will start to dry",
+                        topic="rain" if raining else "rain-stops", rain=rain_label(self.weather.rain))
         w = self.weather.wetness
         ideal = self._ideal
         # small hysteresis so messages don't flicker around the crossover points
@@ -726,7 +771,8 @@ class RaceEngine:
             self._ideal = ideal
             self._event("weather", {"dry": "Track drying: slicks are now the fastest tyre",
                                     "I": "Track is wet: Intermediates are now the fastest tyre",
-                                    "W": "Standing water: full Wets are now the fastest tyre"}[ideal])
+                                    "W": "Standing water: full Wets are now the fastest tyre"}[ideal],
+                        topic=f"ideal-{ideal}")
 
     # -------------------------------------------------------------- queries
     def order(self) -> list[Car]:
@@ -763,7 +809,7 @@ class RaceEngine:
                 "advice": c.advice if (c.controlled and c.running and self.neutral) else None,
             })
             prev = c
-        events, self.events = self.events, []
+        events, self.events = [public_event(e) for e in self.events], []
         laps, self.new_laps = self.new_laps, []
         return {
             "t": round(self.t, 2), "lap": min(self.cfg.laps, lead.lap + (0 if lead.finished else 1)),
@@ -803,6 +849,19 @@ class RaceEngine:
                          wear_mult=self.track.wear_mult, require_two=self._needs_two(car.used))
         return {"code": code, "stops": [{"in_laps": n, "lap": car.lap + n, "compound": c} for n, c in plan.stops],
                 "cost_s": round(plan.cost_s, 1)}
+
+
+# Fields a client gets for each event: race control shows the text; commentary lines also say
+# which teams they're about (so the player's own lines can be highlighted) and how big a moment it is.
+EVENT_KEYS = ("t", "lap", "kind", "text", "code")
+COMM_KEYS = ("teams", "codes", "tone", "topic")
+
+
+def public_event(e: dict) -> dict:
+    out = {k: e[k] for k in EVENT_KEYS}
+    if e["kind"] == "comm":
+        out.update({k: e[k] for k in COMM_KEYS if k in e})
+    return out
 
 
 def fmt_time(s: float) -> str:
