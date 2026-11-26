@@ -30,10 +30,24 @@
   <main class="layout">
     <section class="panel track-panel">
       <canvas id="trackCanvas" aria-label="Track map"></canvas>
+      <button class="btn small map-replay" id="mapReplayBtn" type="button" hidden>Watch replay</button>
+      <div class="replay-bar" id="replayBar" hidden>
+        <button class="btn" id="rpPlay" type="button" aria-label="Play or pause the replay">Pause</button>
+        <button class="btn ghost" id="rpPrev" type="button" aria-label="Previous lap">&#9664; Lap</button>
+        <input type="range" id="rpScrub" min="0" max="1000" step="1" value="0" aria-label="Replay position">
+        <button class="btn ghost" id="rpNext" type="button" aria-label="Next lap">Lap &#9654;</button>
+        <span class="rp-lap" id="rpLap">Lap 0/0</span>
+        <div class="seg small" id="rpSpeed" role="group" aria-label="Replay speed">
+          <button data-v="10">10×</button><button data-v="30" class="on">30×</button><button data-v="90">90×</button>
+        </div>
+        <button class="btn ghost" id="rpExit" type="button">Exit replay</button>
+      </div>
       <div class="legend">
         <span><i class="sw drs"></i>DRS zone</span>
         <span><i class="sw pit"></i>Pit lane</span>
         <span><i class="sw mine"></i>Your cars</span>
+        <span><i class="sw battle"></i>Within 1s of the car ahead</span>
+        <span class="legend-hint">Hover a car for details, click to chart it</span>
       </div>
     </section>
 
@@ -57,7 +71,13 @@
     </section>
 
     <section class="panel chart-panel">
-      <div class="panel-head"><h2>Lap times</h2><span class="hint" id="fastestLap"></span></div>
+      <div class="panel-head">
+        <h2 id="chartTitle">Lap times</h2>
+        <span class="hint" id="fastestLap"></span>
+        <div class="seg small" id="chartSeg" role="group" aria-label="Chart">
+          <button data-v="lap" class="on">Lap times</button><button data-v="gap">Gap to leader</button><button data-v="pos">Positions</button>
+        </div>
+      </div>
       <div class="chart-box"><canvas id="lapChart"></canvas></div>
     </section>
 
@@ -179,6 +199,7 @@
       <div class="row end">
         <button class="btn ghost" value="close">Close</button>
         <button class="btn" id="resultStandingsBtn" type="button" hidden>Standings</button>
+        <button class="btn" id="replayBtn" type="button" hidden>Watch replay</button>
         <button class="btn primary" id="againBtn" value="again">New race</button>
       </div>
     </form>
@@ -317,6 +338,7 @@
   <script src="vendor/chart.umd.js"></script>
   <script src="sound.js"></script>
   <script src="app.js"></script>
+  <script src="race-visuals.js"></script>
   <script src="menu.js"></script>
   <script src="league.js"></script>
 </body>

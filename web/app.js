@@ -372,6 +372,7 @@ function send(msg, after) {
 // ---------------------------------------------------------------- messages
 function onMessage(m) {
   if (m.type === "init") {
+    exitReplay(); S.replay = null; $("replayBtn").hidden = true; $("mapReplayBtn").hidden = true;
     S.track = prepTrack(m.track); S.trackCache = null;
     S.team = m.team; S.compounds = m.compounds; S.canCommand = m.can_command;
     S.seasonRace = m.season || null;
@@ -394,6 +395,8 @@ function onMessage(m) {
     if (m.qualifying && m.qualifying.length) showQualifying(m.qualifying);
   } else if (m.type === "state") {
     onState(m);
+  } else if (m.type === "replay") {
+    onReplay(m);
   } else if (m.type === "lobby") {
     renderLobby(m);
   } else if (m.type === "error" && $("lobbyDialog").open) {
@@ -404,6 +407,7 @@ function onMessage(m) {
 }
 
 function onState(st) {
+  if (replayActive()) return;      // the race is over; the replay owns the screen
   const first = !S.state || S.state.t > st.t;
   S.state = st;
   if (first || S.charted.size === 0) {
@@ -491,7 +495,7 @@ function renderTower(st) {
     if (S.charted.has(c.code)) tr.classList.add("charted");
     tr.addEventListener("click", () => {
       S.charted.has(c.code) ? S.charted.delete(c.code) : S.charted.add(c.code);
-      updateChart(); renderTower(S.state);
+      updateChart(); refreshTower();
     });
     const bar = el("td", "teambar"); const i = el("i"); i.style.background = c.color; bar.append(i);
     const who = el("td"); who.append(el("span", "code", c.code));
@@ -1152,55 +1156,8 @@ function startCareerRound() {
   connect(() => { S.ws.send(JSON.stringify(msg)); $("startDialog").close(); });
 }
 
-// ---------------------------------------------------------------- lap chart
-let chart = null;
-function initChart() {
-  if (!window.Chart) return;
-  Chart.defaults.color = "#8b93a7";
-  Chart.defaults.borderColor = "#262c3d";
-  chart = new Chart($("lapChart"), {
-    type: "line",
-    data: { datasets: [] },
-    options: {
-      animation: false, maintainAspectRatio: false, parsing: false, spanGaps: false,
-      interaction: { mode: "nearest", intersect: false },
-      scales: {
-        x: { type: "linear", title: { display: true, text: "Lap" }, ticks: { precision: 0 } },
-        y: { title: { display: true, text: "Lap time (s)" } },
-      },
-      plugins: {
-        legend: { labels: { boxWidth: 10 } },
-        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtLap(ctx.parsed.y)}` } },
-      },
-    },
-  });
-}
-function resetChart() { if (chart) { chart.data.datasets = []; chart.update(); } }
-function updateChart() {
-  if (!chart || !S.state) return;
-  const colors = new Map(S.state.cars.map((c) => [c.code, c.color]));
-  const sets = [];
-  const seenColor = new Set();
-  let ys = [];
-  for (const code of S.charted) {
-    // Leave out lap 1 and pit laps so the scale shows racing pace.
-    const pts = (S.laps.get(code) || []).map((l) => ({ x: l.lap, y: l.lap === 1 || l.pit ? null : l.time }));
-    ys = ys.concat(pts.filter((p) => p.y != null).map((p) => p.y));
-    const col = colors.get(code);
-    const dashed = seenColor.has(col);   // teammates share a colour, so dash the second one
-    seenColor.add(col);
-    sets.push({ label: code, data: pts, borderColor: col, backgroundColor: col, borderDash: dashed ? [6, 4] : [],
-      pointRadius: 2, borderWidth: 2, tension: 0.2 });
-  }
-  chart.data.datasets = sets;
-  if (ys.length) {
-    ys.sort((a, b) => a - b);
-    const lo = ys[0], p90 = ys[Math.floor(ys.length * 0.9)];
-    chart.options.scales.y.min = Math.floor(lo - 0.5);
-    chart.options.scales.y.max = Math.ceil(Math.max(p90 + 1, lo + 3));
-  }
-  chart.update();
-}
+// ---------------------------------------------------------------- charts
+// The lap time, gap-to-leader and position charts live in race-visuals.js.
 
 // ---------------------------------------------------------------- track drawing
 function prepTrack(t) {
@@ -1293,7 +1250,7 @@ function drawLoop() {
     }
     ctx.drawImage(S.trackCache, 0, 0, w, h);
     if (S.weather) drawRain(ctx, w, h, S.weather);
-    if (S.state) drawCars(ctx, v);
+    drawCarsLayer(ctx, v, w, h);
   }
   requestAnimationFrame(drawLoop);
 }
@@ -1315,45 +1272,6 @@ function drawRain(ctx, w, h, wx) {
   ctx.stroke();
 }
 
-function drawSafetyCar(ctx, v) {
-  const lead = S.state.cars.find((c) => !c.retired && !c.in_pit && !c.finished);
-  if (!lead || !S.disp.has(lead.code)) return;
-  const p = pointAt(S.track, (S.disp.get(lead.code) + 0.012) % 1);
-  const [x, y] = v.map(p.x, p.y);
-  ctx.fillStyle = "#ffd400"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5;
-  ctx.fillRect(x - 9, y - 6, 18, 12); ctx.strokeRect(x - 9, y - 6, 18, 12);
-  ctx.fillStyle = "#000"; ctx.font = "bold 9px ui-monospace, monospace"; ctx.fillText("SC", x - 6, y + 3);
-}
-
-function drawCars(ctx, v) {
-  if (S.state.sc) drawSafetyCar(ctx, v);
-  const cars = [...S.state.cars].reverse();  // leader drawn on top
-  const pitSlots = new Map();
-  cars.forEach((c) => {
-    if (c.retired) return;
-    let target = c.track_pos;
-    const prev = S.disp.has(c.code) ? S.disp.get(c.code) : target;
-    let diff = target - prev; diff -= Math.round(diff);   // shortest way round the loop
-    const shown = Math.abs(diff) > 0.2 ? target : prev + diff * 0.25;
-    S.disp.set(c.code, shown);
-    let p = pointAt(S.track, shown), off = 0;
-    if (c.in_pit) {
-      const slot = pitSlots.size; pitSlots.set(c.code, slot);
-      p = pointAt(S.track, 0.005 + slot * 0.004); off = 55;
-    }
-    const [x, y] = v.map(p.x + p.nx * off, p.y + p.ny * off);
-    ctx.beginPath(); ctx.arc(x, y, c.controlled ? 7 : 5.5, 0, Math.PI * 2);
-    ctx.fillStyle = c.color; ctx.globalAlpha = c.finished ? 0.45 : 1; ctx.fill();
-    ctx.lineWidth = c.controlled ? 2.5 : 1; ctx.strokeStyle = c.controlled ? "#fff" : "#000"; ctx.stroke();
-    ctx.globalAlpha = 1;
-    if (c.controlled || c.pos <= 3) {
-      ctx.font = "bold 11px ui-monospace, monospace";
-      const label = `${c.pos} ${c.code}`;
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = "rgba(7,8,12,.85)"; ctx.fillRect(x + 9, y - 16, tw + 8, 15);
-      ctx.fillStyle = c.controlled ? "#fff" : "#cfd5e3"; ctx.fillText(label, x + 13, y - 5);
-    }
-  });
-}
+// Cars, labels, the Safety Car and the replay are drawn by race-visuals.js.
 
 init().catch((e) => { console.error(e); $("startError").textContent = "Could not load race setup."; });

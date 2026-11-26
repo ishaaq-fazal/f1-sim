@@ -62,6 +62,22 @@ h2 { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: v
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; }
 .sw { display: inline-block; width: 14px; height: 4px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .sw.drs { background: var(--green); } .sw.pit { background: #5b6378; } .sw.mine { background: #fff; height: 8px; width: 8px; border-radius: 50%; }
+.sw.battle { width: 9px; height: 9px; border-radius: 50%; background: transparent; border: 2px solid #ffa800; }
+.legend { flex-wrap: wrap; }
+.legend-hint { margin-left: auto; font-style: italic; }
+
+/* Replay of a finished race: button on the map, controls under it */
+.flag.replay { background: var(--accent); color: #fff; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+.map-replay { position: absolute; top: 18px; right: 18px; background: var(--accent); border-color: var(--accent); font-weight: 700; }
+.replay-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; padding: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; }
+.replay-bar input[type=range] { flex: 1 1 160px; accent-color: var(--accent); min-width: 120px; }
+.replay-bar .rp-lap { font-family: var(--mono); font-weight: 800; min-width: 84px; }
+#rpPlay { min-width: 64px; }
+.wall-panel.replaying { opacity: .45; pointer-events: none; }
+.chart-panel .panel-head { flex-wrap: wrap; }
+.chart-panel .panel-head .hint { margin: 0; margin-left: auto; }
 
 .tower { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 13px; }
 .tower th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11px; padding: 4px 6px; border-bottom: 1px solid var(--line); }

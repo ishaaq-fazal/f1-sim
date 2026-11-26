@@ -24,7 +24,7 @@ def recv(ws, kind, limit=200):
         m = ws.receive_json()
         if m["type"] == kind:
             return m
-        assert m["type"] in ("lobby", "state", "init"), m
+        assert m["type"] in ("lobby", "state", "init", "replay"), m
     raise AssertionError(f"no {kind} message")
 
 

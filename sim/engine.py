@@ -25,6 +25,7 @@ MIN_GAP_S = 0.22          # closest a car can follow without passing
 STANDING_START_S = 2.8
 GRID_SLOT_M = 8.0
 MAX_SUBSTEP_S = 0.25
+REPLAY_FRAME_S = 2.0       # race seconds between recorded replay frames
 # Race-day form: how well each car suits this circuit and how sharp each driver is today.
 # Drawn once per race, so it doesn't average out over the laps like lap-to-lap noise does.
 TEAM_FORM_SD = 0.15       # s/lap, shared by both cars of a team
@@ -155,10 +156,15 @@ class RaceEngine:
         self.leader_lap_seen = 0
         self.fastest: dict | None = None
         self.events: list[dict] = []
+        self.event_log: list[dict] = []   # every event of the race, kept for the replay
         self.new_laps: list[dict] = []
+        self.frames: list[list] = []      # replay frames: [t, [distance per car], status per car]
+        self._next_frame = 0.0
+        self._replay: dict | None = None
         self.cars: list[Car] = []
         self.qualifying: list[dict] = []
         self._setup(drivers or default_grid())
+        self._record_frame()              # the grid, at t = 0
 
     # ----------------------------------------------------------------- setup
     def _setup(self, drivers: list[Driver]) -> None:
@@ -279,7 +285,9 @@ class RaceEngine:
 
     def _event(self, kind: str, text: str, code: str | None = None) -> None:
         lap = min(self.cfg.laps, max(1, self.leader().lap + 1)) if self.cars else 1
-        self.events.append({"t": round(self.t, 1), "lap": lap, "kind": kind, "text": text, "code": code})
+        ev = {"t": round(self.t, 1), "lap": lap, "kind": kind, "text": text, "code": code}
+        self.events.append(ev)
+        self.event_log.append(ev)
 
     # ------------------------------------------------------------- commands
     def car(self, code: str) -> Car | None:
@@ -342,6 +350,33 @@ class RaceEngine:
             h = min(dt, MAX_SUBSTEP_S)
             self._substep(h)
             dt -= h
+            if self.t >= self._next_frame or self.finished:
+                self._record_frame()
+
+    def _record_frame(self) -> None:
+        """One replay frame: race time, each car's distance in laps (lap + distance fraction,
+        in grid order), a status letter per car (r running, p in the pit box, f finished, x out)
+        and the race flag: g green, s Safety Car, v Virtual Safety Car."""
+        if not self.cars:
+            return
+        dists, status = [], []
+        for c in self.cars:
+            whole = math.floor(c.frac)
+            dists.append(round(c.lap + whole + self.track.dist_frac(c.frac - whole), 3))
+            status.append("f" if c.finished else "x" if c.retired else "p" if c.pit_timer > 0 else "r")
+        flag = "s" if self.sc else "v" if self.vsc else "g"
+        self.frames.append([round(self.t, 2), dists, "".join(status), flag])
+        self._next_frame = self.t + REPLAY_FRAME_S
+
+    def replay(self) -> dict:
+        """Everything the lap-by-lap replay and the race charts need (see sim/replay.py)."""
+        from .replay import build_replay
+        if self.finished and self._replay is not None:
+            return self._replay
+        out = build_replay(self)
+        if self.finished:
+            self._replay = out
+        return out
 
     @property
     def finished(self) -> bool:
@@ -449,7 +484,7 @@ class RaceEngine:
                      * wear_factor(car.tyre, self.weather.wetness)
                      * (self.cfg.team_wear or {}).get(car.driver.team, 1.0))
         car.fuel = max(0.0, car.fuel - FUEL_PER_LAP_KG)
-        record = {"code": car.code, "lap": car.lap, "time": round(lap_time, 3), "tyre": car.tyre,
+        record = {"code": car.code, "lap": car.lap, "t": round(t_cross, 3), "time": round(lap_time, 3), "tyre": car.tyre,
                   "age": car.tyre_age, "pit": car.pit_this_lap, "sectors": [round(s or 0, 3) for s in car.sectors]}
         car.laps.append(record)
         self.new_laps.append(record)

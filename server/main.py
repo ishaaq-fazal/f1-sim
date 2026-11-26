@@ -127,6 +127,7 @@ class RaceSession:
         self.ws = ws
         self.user = user
         self.saved = False
+        self.replay_sent: RaceEngine | None = None             # race whose replay this client has
         self.seed: int | None = None
         self.engine: RaceEngine | None = None
         self.team: str | None = None
@@ -159,6 +160,8 @@ class RaceSession:
                     if self.engine.finished and not self.saved:
                         self._save_result()       # saved before the final state, so standings are ready
                     await self._send_state()
+                    if self.engine.finished:
+                        await self._send_replay(self.engine)
                 await asyncio.sleep(TICK_S)
             receiver.result()  # re-raise disconnects
         finally:
@@ -191,6 +194,9 @@ class RaceSession:
                 out.append(msg)
         for m in out:
             await self.ws.send_text(json.dumps(m))
+        engine = room.engine
+        if engine is not None and engine.finished and room.team_of(self.user) is not None:
+            await self._send_replay(engine)
 
     def _room_init(self, room) -> dict:
         p = room.players[self.user.id]
@@ -359,6 +365,13 @@ class RaceSession:
             "qualifying": e.qualifying,
         }))
         await self._send_state()
+
+    async def _send_replay(self, engine: RaceEngine) -> None:
+        """Once per race, after the flag: the lap-by-lap replay and chart data."""
+        if self.replay_sent is engine:
+            return
+        self.replay_sent = engine
+        await self.ws.send_text(json.dumps(engine.replay()))
 
     async def _send_state(self) -> None:
         snap = self.engine.snapshot()
