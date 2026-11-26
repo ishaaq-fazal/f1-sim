@@ -36,8 +36,8 @@ def to_round(email, sid, round_no):
 
 # ---------------------------------------------------------------- rules
 def test_three_sprint_weekends_on_original_circuits_spread_through_the_year():
-    assert sprint_rounds() == [3, 6, 9]
-    assert set(SPRINT_TRACKS) <= set(TRACK_SPECS) and len(SPRINT_TRACKS) == 3
+    assert sprint_rounds() == [3, 6, 10, 14, 18, 21]
+    assert set(SPRINT_TRACKS) <= set(TRACK_SPECS) and len(SPRINT_TRACKS) == 6
     assert [SCHEDULE[n - 1] for n in sprint_rounds()] == list(SPRINT_TRACKS)
     assert not is_sprint_round(1) and not is_sprint_round(0) and not is_sprint_round(ROUNDS + 1)
 
@@ -214,7 +214,7 @@ def test_career_sprint_points_pay_prize_money_and_count_for_the_board(alice):
         repo.record_sprint(s, user, season.id, FIRST, track_for_round(FIRST), 1,
                            [(code, team, i, False) for i, (code, team, _, _) in enumerate(order, 1)])
     after = alice.get(f"/api/careers/{c['id']}").json()
-    assert after["budget"] == pytest.approx(before["budget"] + cr.ROUND_PRIZE_PER_POINT * 15, abs=0.1)
+    assert after["budget"] == pytest.approx(before["budget"] + cr.ROUND_PRIZE_PER_POINT * 15 * cr.ROUND_SHARE, abs=0.1)
     assert after["dev_points"] == before["dev_points"]          # no development points for a sprint
     assert after["next_session"] == "race"
     table = alice.get(f"/api/seasons/{c['season_id']}").json()["teams"]
@@ -225,7 +225,7 @@ def test_credit_sprint_pays_only_for_points():
     st = {"budget": 10.0, "income": 0.0, "dev_points": 3}
     assert cr.credit_sprint(st, 0) == 0
     cr.credit_sprint(st, 10)
-    assert st["budget"] == pytest.approx(10 + cr.ROUND_PRIZE_PER_POINT * 10) and st["dev_points"] == 3
+    assert st["budget"] == pytest.approx(10 + cr.ROUND_PRIZE_PER_POINT * 10 * cr.ROUND_SHARE, abs=0.05) and st["dev_points"] == 3
 
 
 # ---------------------------------------------------------------- leagues

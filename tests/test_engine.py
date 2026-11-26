@@ -148,14 +148,14 @@ def test_grid_starts_on_a_mix_of_compounds():
 
 
 def test_every_circuit_is_a_clean_loop_and_races_to_the_flag():
-    """All 10 circuits: no self-crossing outline, two DRS zones, sensible lap times, a full race runs."""
+    """All 22 circuits: no self-crossing outline, two DRS zones, sensible lap times, a full race runs."""
     import numpy as np
     from sim.track import TRACK_SPECS, get_track
 
     def side(p, q, r):
         return np.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
 
-    assert len(TRACK_SPECS) == 10
+    assert len(TRACK_SPECS) == 22
     for tid in TRACK_SPECS:
         t = get_track(tid)
         P = t.points[::2]

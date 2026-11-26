@@ -39,7 +39,13 @@ PIT_PER_LEVEL_S = 0.1            # seconds off each pit stop per level
 DNF_PER_LEVEL = 0.85             # breakdown chance multiplier per level
 MAX_LEVEL = 15
 
-DP_PER_ROUND_BASE = 1            # development points after every round ...
+# Money and development points per round were tuned for a 10-round season. Each round now pays
+# its share of that, so a 22-round season earns about the same in total and upgrade costs, wages
+# and end-of-season prizes stay in balance.
+ECONOMY_ROUNDS = 10
+ROUND_SHARE = ECONOMY_ROUNDS / ROUNDS
+
+DP_PER_ROUND_BASE = 1            # development points after every round (before ROUND_SHARE) ...
 DP_PER_ROUND_POINTS = 10         # ... plus one for every 10 points the team scored
 FACTORY_DP = 5                   # funding the factory buys this many DP ...
 FACTORY_COST = 10.0              # ... for this much money
@@ -380,26 +386,31 @@ def renew_driver(state: dict, code: str, years: int, rounds_done: int) -> None:
 
 
 def round_prize(team_points: int) -> float:
-    return round(ROUND_PRIZE_BASE + ROUND_PRIZE_PER_POINT * team_points, 1)
+    return round((ROUND_PRIZE_BASE + ROUND_PRIZE_PER_POINT * team_points) * ROUND_SHARE, 2)
 
 
-def round_dev_points(team_points: int) -> int:
-    return DP_PER_ROUND_BASE + team_points // DP_PER_ROUND_POINTS
+def round_dev_points(team_points: int) -> float:
+    """Development points a round earns, as a fraction: whole points are paid out and the rest
+    carries over to the next round, so small per-round shares still add up."""
+    return (DP_PER_ROUND_BASE + team_points / DP_PER_ROUND_POINTS) * ROUND_SHARE
 
 
 def credit_round(state: dict, team_points: int) -> float:
     prize = round_prize(team_points)
-    state["budget"] = round(state["budget"] + prize, 1)
-    state["income"] = round(state["income"] + prize, 1)
-    state["dev_points"] = state.get("dev_points", 0) + round_dev_points(team_points)
+    state["budget"] = round(state["budget"] + prize, 2)      # 2 places: a round's share can be small
+    state["income"] = round(state["income"] + prize, 2)
+    earned = state.get("dp_carry", 0.0) + round_dev_points(team_points)
+    whole = int(earned + 1e-4)          # float sums like 22 x (10/22) land a hair under 10
+    state["dev_points"] = state.get("dev_points", 0) + whole
+    state["dp_carry"] = max(0.0, round(earned - whole, 6))
     return prize
 
 
 def credit_sprint(state: dict, team_points: int) -> float:
     """Sprint prize money: paid per point scored (no appearance money, no development points)."""
-    prize = round(ROUND_PRIZE_PER_POINT * team_points, 1)
-    state["budget"] = round(state["budget"] + prize, 1)
-    state["income"] = round(state["income"] + prize, 1)
+    prize = round(ROUND_PRIZE_PER_POINT * team_points * ROUND_SHARE, 2)
+    state["budget"] = round(state["budget"] + prize, 2)
+    state["income"] = round(state["income"] + prize, 2)
     return prize
 
 

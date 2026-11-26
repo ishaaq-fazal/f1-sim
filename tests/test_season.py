@@ -15,12 +15,12 @@ from tests.conftest import ORIGIN, PASSWORD
 
 
 # ---------------------------------------------------------------- rules
-def test_ten_rounds_one_at_every_circuit():
+def test_twenty_two_rounds_one_at_every_circuit():
     from sim.track import TRACK_SPECS
-    assert ROUNDS == 10 == len(TRACK_SPECS)
+    assert ROUNDS == 22 == len(TRACK_SPECS)
     assert sorted(SCHEDULE) == sorted(TRACK_SPECS)          # every circuit exactly once
     with pytest.raises(ValueError):
-        track_for_round(11)
+        track_for_round(ROUNDS + 1)
 
 
 def test_f1_points_for_the_top_ten_only():
@@ -222,7 +222,7 @@ def test_a_season_has_varied_weather():
     from sim.season import round_weather
     for season in range(50):
         modes = [round_weather(season * 1000 + r) for r in range(ROUNDS)]
-        assert len(set(modes)) >= 2 and modes.count("dry") <= 7
+        assert len(set(modes)) >= 2 and modes.count("dry") <= ROUNDS * 0.6
 
 
 def test_forecast_describes_showers_and_drying_tracks():

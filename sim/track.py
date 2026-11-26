@@ -198,6 +198,97 @@ SALTMARSH = [
     (2000, 850), (1900, 1000), (2300, 1150), (2600, 1300), (2550, 1550), (2300, 1600),
 ]
 
+# Temple of speed: long straights joined by two chicanes and a huge final sweep. Low downforce.
+STONEBRIDGE = [
+    (1600, 1700), (400, 1700), (200, 1550), (180, 1300), (200, 500), (290, 410), (220, 330), (260, 240),
+    (450, 150), (2300, 150), (2600, 200), (2750, 400), (2720, 780), (2820, 880), (2730, 990),
+    (2800, 1350), (2650, 1650), (2300, 1720),
+]
+
+# Fast street circuit along a waterfront: flat-out kinks between 90-degree corners.
+LANTERN_QUAY = [
+    (1500, 1800), (900, 1780), (400, 1800), (300, 1720), (300, 1100), (380, 1000), (900, 1000),
+    (1000, 920), (1000, 500), (1100, 400), (1800, 400), (1900, 300), (1980, 200), (2700, 200),
+    (2800, 300), (2800, 1000), (2740, 1200), (2840, 1400), (2800, 1720), (2700, 1800), (2100, 1820),
+]
+
+# Hillside rollercoaster: blind crests and flowing esses.
+FALCONRIDGE = [
+    (1300, 1600), (600, 1600), (350, 1450), (400, 1200), (700, 1100), (850, 900), (700, 650),
+    (800, 400), (1100, 300), (1400, 450), (1500, 700), (1750, 750), (1950, 550), (2250, 450),
+    (2550, 600), (2600, 900), (2400, 1050), (2150, 1000), (2000, 1200), (2250, 1400), (2050, 1600),
+]
+
+# Hot, stop-start quarry circuit: hairpins, short straights, a very abrasive surface.
+COPPERBASIN = [
+    (1500, 1600), (500, 1600), (300, 1500), (350, 1350), (900, 1300), (1000, 1200), (900, 1100),
+    (400, 1050), (300, 900), (400, 750), (1200, 700), (1350, 600), (1300, 450), (800, 400),
+    (700, 300), (800, 200), (2000, 200), (2200, 300), (2200, 500), (1900, 600), (1800, 750),
+    (2400, 800), (2600, 950), (2600, 1450), (2450, 1600),
+]
+
+# Old airfield: wide runways at an angle, open hairpins, wind.
+THORNBURY = [
+    (1600, 1700), (550, 1700), (320, 1690), (210, 1600), (230, 1470), (360, 1350), (700, 1080), (1050, 800), (1350, 560), (1480, 460),
+    (1650, 430), (2200, 440), (2700, 450), (2850, 550), (2800, 700), (2400, 800), (2300, 950), (2500, 1100), (2800, 1200),
+    (2850, 1500), (2700, 1700),
+]
+
+# Narrow lanes through vineyard hills: twisty, little room to pass.
+VINEHILL = [
+    (1100, 1500), (500, 1500), (300, 1400), (250, 1150), (450, 1000), (350, 800), (450, 550),
+    (700, 500), (800, 700), (1000, 750), (1100, 550), (1000, 350), (1200, 200), (1500, 250),
+    (1600, 500), (1450, 700), (1650, 850), (1900, 700), (2100, 800), (2050, 1100), (1800, 1150),
+    (1750, 1350), (1600, 1500),
+]
+
+# Cold lakeside ring: smooth and low-grip, so tyres barely wear.
+FROSTHOLM = [
+    (1500, 1650), (700, 1650), (400, 1500), (250, 1200), (300, 850), (500, 600), (850, 450),
+    (1300, 400), (1500, 550), (1700, 700), (1950, 550), (2300, 450), (2650, 600), (2800, 900),
+    (2750, 1100), (2400, 1150), (2250, 1250), (2350, 1350), (2700, 1350), (2780, 1500), (2500, 1620),
+    (2100, 1650),
+]
+
+# Island marina: a long back straight, then a tight section of 90s round the harbour.
+SUNREEF = [
+    (1400, 1700), (800, 1700), (700, 1600), (700, 1450), (400, 1450), (300, 1350), (300, 1100),
+    (450, 1000), (700, 1000), (800, 900), (700, 750), (350, 700), (250, 550), (350, 400),
+    (2300, 350), (2550, 450), (2550, 650), (2450, 750), (2100, 700), (1900, 800), (2000, 950),
+    (2500, 1000), (2700, 1150), (2700, 1600), (2550, 1700),
+]
+
+# Classic forest road course: the longest lap of all, with fast esses and a long run back.
+ASHCOMBE = [
+    (1800, 1900), (700, 1900), (350, 1750), (250, 1450), (400, 1200), (250, 900), (300, 600),
+    (550, 400), (900, 350), (1100, 550), (1350, 600), (1550, 400), (1800, 250), (2200, 200),
+    (2550, 300), (2850, 500), (2900, 850), (2650, 1050), (2700, 1300), (2900, 1500), (2800, 1800),
+    (2400, 1900),
+]
+
+# Short, tight club circuit: the shortest lap, a corner every few seconds.
+PINECREST = [
+    (1000, 1300), (500, 1300), (350, 1200), (350, 1000), (550, 900), (800, 950), (900, 800),
+    (700, 650), (400, 600), (350, 400), (500, 250), (900, 250), (1050, 400), (1250, 450),
+    (1450, 300), (1700, 350), (1750, 600), (1550, 700), (1500, 900), (1700, 1050), (1650, 1250),
+    (1450, 1300),
+]
+
+# Desert canyon: one enormous straight, then a tight, technical infield.
+REDCLIFF = [
+    (1400, 1700), (300, 1700), (200, 1600), (200, 1400), (400, 1300), (700, 1350), (800, 1200),
+    (600, 1050), (350, 1000), (300, 800), (500, 650), (900, 700), (1100, 600), (1000, 400),
+    (1200, 250), (1500, 300), (1600, 500), (1900, 550), (2100, 350), (2400, 300), (2600, 450),
+    (2700, 800), (2650, 1200), (2700, 1500), (2650, 1680),
+]
+
+# Clifftop coast road: big high-speed sweepers that load the tyres.
+BRIGHTWATER = [
+    (1400, 1750), (600, 1700), (300, 1500), (300, 1150), (550, 900), (500, 600), (700, 350),
+    (1100, 250), (1500, 350), (1800, 600), (2150, 650), (2500, 450), (2800, 550), (2850, 900),
+    (2600, 1150), (2700, 1450), (2400, 1700), (1900, 1760),
+]
+
 TRACK_SPECS = {
     "harbourline": dict(name="Harbourline Circuit", ctrl=HARBOURLINE, length_m=5120, base_lap_s=88.0,
                         pit_loss_s=21.5, start_near=(1650, 2002), wear_mult=1.0, overtake_mult=1.0,
@@ -216,7 +307,7 @@ TRACK_SPECS = {
                       blurb="Long straights and slipstreams: easy to pass, kind to tyres."),
     "glacier": dict(name="Glacier Pass", ctrl=GLACIER, length_m=6250, base_lap_s=102.0,
                     pit_loss_s=24.0, start_near=(1200, 1900), wear_mult=0.7, overtake_mult=0.9,
-                    blurb="The longest lap: mountain hairpins and cold air, so tyres last and one-stops rule."),
+                    blurb="A long lap of mountain hairpins and cold air, so tyres last and one-stops rule."),
     "neon": dict(name="Neon Bay Street Circuit", ctrl=NEON, length_m=5050, base_lap_s=96.0,
                  pit_loss_s=22.0, start_near=(1150, 1800), wear_mult=0.85, overtake_mult=0.55,
                  blurb="Night race round city blocks: walls everywhere and few places to pass."),
@@ -229,6 +320,42 @@ TRACK_SPECS = {
     "saltmarsh": dict(name="Saltmarsh Coast", ctrl=SALTMARSH, length_m=5350, base_lap_s=90.0,
                       pit_loss_s=22.5, start_near=(1050, 1600), wear_mult=1.25, overtake_mult=1.25,
                       blurb="Windswept seaside track with two big straights and a coarse surface."),
+    "stonebridge": dict(name="Stonebridge Speedway", ctrl=STONEBRIDGE, length_m=5800, base_lap_s=80.0,
+                        pit_loss_s=20.5, start_near=(1000, 1700), wear_mult=0.85, overtake_mult=1.55,
+                        blurb="Flat-out speedway: huge straights, two chicanes and a long final sweep. Slipstream heaven, kind to tyres."),
+    "lanternquay": dict(name="Lantern Quay Street Circuit", ctrl=LANTERN_QUAY, length_m=6050, base_lap_s=95.0,
+                        pit_loss_s=21.0, start_near=(1300, 1790), wear_mult=0.8, overtake_mult=0.75,
+                        blurb="Fast street circuit along the waterfront: flat-out kinks between the walls. Brave overtakes only."),
+    "falconridge": dict(name="Falcon Ridge", ctrl=FALCONRIDGE, length_m=4600, base_lap_s=82.0,
+                        pit_loss_s=20.0, start_near=(950, 1600), wear_mult=1.2, overtake_mult=0.85,
+                        blurb="Hillside rollercoaster of blind crests and esses that work the tyres hard; passing takes nerve."),
+    "copperbasin": dict(name="Copperbasin Raceway", ctrl=COPPERBASIN, length_m=4400, base_lap_s=81.0,
+                        pit_loss_s=22.5, start_near=(1000, 1600), wear_mult=1.55, overtake_mult=1.0,
+                        blurb="Hot, stop-start quarry track with the most abrasive surface of the year: tyres fall away fast."),
+    "thornbury": dict(name="Thornbury Airfield", ctrl=THORNBURY, length_m=5900, base_lap_s=89.0,
+                      pit_loss_s=21.5, start_near=(1000, 1700), wear_mult=1.1, overtake_mult=1.3,
+                      blurb="Old airfield of wide runways and open hairpins: long straights, lots of overtaking, gusty wind."),
+    "vinehill": dict(name="Vinehill Circuit", ctrl=VINEHILL, length_m=4100, base_lap_s=75.0,
+                     pit_loss_s=19.5, start_near=(800, 1500), wear_mult=1.0, overtake_mult=0.6,
+                     blurb="Narrow lanes through the vineyards: twisty and tight, so track position matters."),
+    "frostholm": dict(name="Frostholm Lake Ring", ctrl=FROSTHOLM, length_m=4950, base_lap_s=83.0,
+                      pit_loss_s=20.5, start_near=(1100, 1650), wear_mult=0.65, overtake_mult=1.05,
+                      blurb="Cold, smooth lakeside ring: the tyres barely wear, so one-stops and long stints rule."),
+    "sunreef": dict(name="Sunreef Island", ctrl=SUNREEF, length_m=5400, base_lap_s=93.0,
+                    pit_loss_s=22.0, start_near=(1100, 1700), wear_mult=0.95, overtake_mult=0.9,
+                    blurb="Island marina track: a long back straight, then a tight run of 90-degree corners round the harbour."),
+    "ashcombe": dict(name="Ashcombe Forest", ctrl=ASHCOMBE, length_m=6900, base_lap_s=112.0,
+                     pit_loss_s=23.5, start_near=(1250, 1900), wear_mult=1.1, overtake_mult=1.2,
+                     blurb="Classic forest road course and the longest lap of the year: fast esses and a long run back."),
+    "pinecrest": dict(name="Pinecrest Park", ctrl=PINECREST, length_m=3300, base_lap_s=64.0,
+                      pit_loss_s=18.0, start_near=(750, 1300), wear_mult=1.2, overtake_mult=0.5,
+                      blurb="The shortest lap: a tight club circuit with a corner every few seconds and nowhere to pass."),
+    "redcliff": dict(name="Redcliff Canyon", ctrl=REDCLIFF, length_m=5300, base_lap_s=88.0,
+                     pit_loss_s=22.0, start_near=(900, 1700), wear_mult=1.0, overtake_mult=1.45,
+                     blurb="Desert canyon with one enormous straight and a slow, technical infield: easy to pass."),
+    "brightwater": dict(name="Brightwater Bay", ctrl=BRIGHTWATER, length_m=5500, base_lap_s=86.0,
+                        pit_loss_s=21.0, start_near=(1000, 1730), wear_mult=1.35, overtake_mult=1.0,
+                        blurb="Clifftop coast road of big high-speed sweepers that punish the tyres."),
 }
 DEFAULT_TRACK = "harbourline"
 _cache: dict[str, Track] = {}

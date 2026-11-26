@@ -33,10 +33,15 @@ def last_place(team: str) -> dict[str, int]:
 def test_results_earn_development_points_and_small_teams_get_more_factory_time():
     st = cr.new_career("solace", 1)
     dp = st["dev_points"]
-    cr.credit_round(st, 0)
-    assert st["dev_points"] == dp + 1
-    cr.credit_round(st, 43)
-    assert st["dev_points"] == dp + 1 + 5
+    # A season's worth of development is spread over its rounds: the share left over from one
+    # round carries into the next, so a full season of scoreless rounds still earns 10 DP.
+    for _ in range(cr.ROUNDS):
+        cr.credit_round(st, 0)
+    assert st["dev_points"] == dp + cr.ECONOMY_ROUNDS * cr.DP_PER_ROUND_BASE
+    before = st["dev_points"]
+    for _ in range(cr.ROUNDS):
+        cr.credit_round(st, 43)
+    assert st["dev_points"] == before + int(cr.ECONOMY_ROUNDS * (1 + 4.3) + 1e-6)
     assert cr.season_allowance(10) > cr.season_allowance(1)
     assert cr.new_career("kestrel", 1)["dev_points"] > cr.new_career("aurora", 1)["dev_points"]
 
@@ -98,7 +103,8 @@ def test_off_season_brings_rookies_retires_veterans_and_renewals_follow_the_rati
     st = cr.new_career("kestrel", 4)            # KOV is 37
     st["drivers"][0]["years"] = st["drivers"][1]["years"] = 1
     market_before = {d["code"] for d in st["market"]}
-    cr.end_season(st, 9, 10, "MAR", seed=2, team_positions=last_place("kestrel"),
+    target = next(o["target"] for o in st["objectives"]["items"] if o["kind"] == "points")
+    cr.end_season(st, 9, target, "MAR", seed=2, team_positions=last_place("kestrel"),       # warning, not sacked
                   driver_points={"KOV": 6, "ELL": 4})
     kov = next(d for d in st["drivers"] if d["code"] == "KOV")
     assert kov["age"] == 38 and kov["retiring"] and kov["years"] == 0

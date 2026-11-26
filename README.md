@@ -10,12 +10,19 @@ The race engine is Python; the browser draws it.
 
 ## Features
 
-* **10 original circuits**, each with its own layout, lap length, tyre wear and overtaking difficulty:
+* **22 original circuits**, each with its own layout, lap length, tyre wear and overtaking difficulty:
   Harbourline (balanced), Monteverde Street Circuit (very hard to pass, easy on tyres),
   Sandridge Raceway (very high wear, easy to pass), Alderwood Park (high wear, hard to pass),
-  Riverside Ring (long straights, easy to pass), Glacier Pass (longest lap, very low wear),
+  Riverside Ring (long straights, easy to pass), Glacier Pass (mountain hairpins, very low wear),
   Neon Bay Street Circuit (night street race, hard to pass), Highmoor Circuit (very fast, high wear),
-  Cedar Vale (short and twisty, almost no passing) and Saltmarsh Coast (two big straights, coarse surface).
+  Cedar Vale (short and twisty, almost no passing), Saltmarsh Coast (two big straights, coarse surface),
+  Stonebridge Speedway (flat-out, the fastest lap of the year), Lantern Quay Street Circuit (fast
+  waterfront street track), Falcon Ridge (hillside crests and esses), Copperbasin Raceway (hot,
+  stop-start, the highest tyre wear), Thornbury Airfield (wide runways, easy to pass), Vinehill
+  Circuit (narrow and twisty), Frostholm Lake Ring (cold and smooth, the lowest tyre wear), Sunreef
+  Island (long straight, then a tight marina section), Ashcombe Forest (the longest lap), Pinecrest
+  Park (the shortest lap, nowhere to pass), Redcliff Canyon (one huge straight and a slow infield)
+  and Brightwater Bay (high-speed clifftop sweepers, high wear).
 * **Qualifying**: a one-lap shootout on Softs (or wet tyres in the rain) sets the grid before
   every race. For each of your cars you choose **Push** (quicker, bigger risk of a mistake),
   **Normal** or **Play safe** (slower, rarely goes wrong). Rain makes every lap less predictable.
@@ -30,10 +37,11 @@ The race engine is Python; the browser draws it.
   (no audio files): an engine note that follows your lead car's speed through the gears, wheel
   guns and the pit limiter when your car stops, start lights and the chequered flag. Sound
   settings live in the menu and are remembered in your browser.
-* **Season mode**: a 10-race championship, one round at every circuit, with the same team all
+* **Season mode**: a 22-race championship, one round at every circuit, with the same team all
   season. Every car scores F1 points (25-18-15-12-10-8-6-4-2-1 for the top 10), and the
   leaderboard shows drivers' and teams' standings plus the calendar with each round's winner.
-  **Sprint weekends** at Riverside Ring, Glacier Pass and Saltmarsh Coast (rounds 3, 6 and 9) add a
+  **Sprint weekends** at Riverside Ring, Redcliff Canyon, Thornbury Airfield, Glacier Pass, Saltmarsh
+  Coast and Ashcombe Forest (rounds 3, 6, 10, 14, 18 and 21) add a
   sprint race before the Grand Prix: about a third of the distance, its own qualifying lap and
   weather, no compulsory pit stop, and 8-7-6-5-4-3-2-1 points for the top 8. Sprint points count in
   season, career and league standings (ties still go to Grand Prix wins).
@@ -72,7 +80,7 @@ The race engine is Python; the browser draws it.
 
 ```
 sim/        pure-Python race engine (no web code)
-  track.py      the 10 circuits: geometry, speed profile, sectors, DRS zones, tyre wear, overtaking
+  track.py      the 22 circuits: geometry, speed profile, sectors, DRS zones, tyre wear, overtaking
   tyres.py      compounds: pace offset, degradation, wear cliff; pace modes
   strategy.py   pit strategy optimiser (used by AI teams and for "model's best plan")
   engine.py     the race: lap times, fuel, traffic, overtakes, pit stops, VSC, DNFs, starting tyres
@@ -103,7 +111,7 @@ Forgot a password? `python -m server.cli reset-password you@example.com`
 ## Checks
 
 ```bash
-pytest -q                          # 194 tests: engine, circuits, weather, seasons, leagues, league races, career, login, security
+pytest -q                          # 292 tests: engine, circuits, weather, seasons, leagues, league races, career, login, security
 pip-audit -r requirements.txt      # known-vulnerability scan of pinned deps
 ```
 

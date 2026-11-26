@@ -1,5 +1,5 @@
-"""Season mode: a 10-round championship, one race at each circuit, scored with F1 points.
-Three rounds are sprint weekends: a short sprint race (top 8 score 8-7-6-5-4-3-2-1) before the
+"""Season mode: a 22-round championship, one race at each circuit, scored with F1 points.
+Six rounds are sprint weekends: a short sprint race (top 8 score 8-7-6-5-4-3-2-1) before the
 Grand Prix.
 
 Pure Python (no web or database code), so the rules can be tested on their own.
@@ -10,8 +10,12 @@ import random
 from dataclasses import dataclass, field
 
 # One round at each circuit, ordered so street, fast and high-wear tracks are mixed through the year.
-SCHEDULE: tuple[str, ...] = ("harbourline", "monteverde", "riverside", "sandridge", "cedarvale",
-                             "glacier", "alderwood", "neon", "saltmarsh", "highmoor")
+SCHEDULE: tuple[str, ...] = (
+    "harbourline", "sandridge", "riverside", "monteverde", "falconridge", "redcliff",           # 1-6
+    "vinehill", "alderwood", "lanternquay", "thornbury", "cedarvale", "frostholm",           # 7-12
+    "stonebridge", "glacier", "pinecrest", "copperbasin", "sunreef", "saltmarsh",            # 13-18
+    "highmoor", "neon", "ashcombe", "brightwater",                                          # 19-22
+)
 ROUNDS = len(SCHEDULE)
 
 # Points for P1..P10, as in Formula 1. Retired cars score nothing.
@@ -19,8 +23,8 @@ POINTS: tuple[int, ...] = (25, 18, 15, 12, 10, 8, 6, 4, 2, 1)
 
 
 # Sprint weekends: a short race on Saturday before the Grand Prix, at circuits where passing is
-# possible (rounds 3, 6 and 9, spread through the year).
-SPRINT_TRACKS: tuple[str, ...] = ("riverside", "glacier", "saltmarsh")
+# possible (rounds 3, 6, 10, 14, 18 and 21, spread through the year).
+SPRINT_TRACKS: tuple[str, ...] = ("riverside", "redcliff", "thornbury", "glacier", "saltmarsh", "ashcombe")
 # Points for P1..P8 in a sprint, as in Formula 1.
 SPRINT_POINTS: tuple[int, ...] = (8, 7, 6, 5, 4, 3, 2, 1)
 SPRINT_LAP_SHARE = 1 / 3          # an F1 sprint is about a third of the Grand Prix distance

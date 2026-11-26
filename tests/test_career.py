@@ -70,8 +70,9 @@ def test_end_of_season_pays_prizes_and_wages_ticks_contracts_and_rivals_improve(
     st = cr.new_career("verdant", 1)
     budget, wages = st["budget"], sum(d["salary"] for d in st["drivers"])
     years = [d["years"] for d in st["drivers"]]
-    summary = cr.end_season(st, team_position=3, team_points=120, champion="MAR", seed=5)
-    assert summary["verdict"] == "bonus"           # P3 with 120 points beats Verdant's targets
+    pts = 120 * ROUNDS // 10                     # 120 points a 10-round season, scaled to the calendar
+    summary = cr.end_season(st, team_position=3, team_points=pts, champion="MAR", seed=5)
+    assert summary["verdict"] == "bonus"           # P3 with that many points beats Verdant's targets
     assert st["budget"] == pytest.approx(budget + cr.SEASON_PRIZE[2] + cr.BOARD_BONUS_MONEY - wages, abs=0.1)
     assert [d["years"] for d in st["drivers"]] == [y - 1 for y in years]
     assert all(v > 0 for v in st["ai_dev"].values())
